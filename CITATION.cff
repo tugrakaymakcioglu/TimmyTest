@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use TimmyTest in your research or software testing workflows, please cite it as below."
+authors:
+  - family-names: "Kaymakcioglu"
+    given-names: "Tugra"
+title: "TimmyTest: Zero-Token Test Runner & AI Agent Intelligence"
+version: 0.1.0
+date-released: 2026-08-14
+url: "https://github.com/tugrakaymakcioglu/TimmyTest"
+license: "Apache-2.0"
