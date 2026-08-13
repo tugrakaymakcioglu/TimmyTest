@@ -16,7 +16,7 @@
 **Stop burning tens of thousands of LLM tokens on test exploration.**  
 TimmyTest analyzes any codebase, executes tests locally with 0 AI tokens, detects missing test modules, isolates failure root causes with actionable suggestions, and produces an ultra-dense, copy-pasteable handoff prompt for AI coding agents.
 
-[Quick Start](#-quick-start) • [Installation](#-installation) • [Core Features](#-features) • [Ecosystems](#-supported-ecosystems) • [Command Reference](#-command-reference) • [Token Savings](#-why-timmytest-the-token-drain-problem)
+[Türkçe Dokümantasyon](README.tr.md) &nbsp;·&nbsp; [Quick Start](#-quick-start) • [Installation](#-installation) • [Core Features](#-features) • [Ecosystems](#-supported-ecosystems) • [Command Reference](#-command-reference) • [Token Savings](#-why-timmytest-the-token-drain-problem)
 
 ---
 

@@ -5,37 +5,41 @@ build-backend = "hatchling.build"
 [project]
 name = "timmytest"
 version = "0.1.0"
-description = "Zero-token terminal test runner, project test-gap analyzer, and AI agent prompt generator."
+description = "Zero-token test runner & AST test-gap analyzer. Stop burning LLM tokens on test discovery — generate dense diagnostic prompts for Claude Code, Cursor, Codex & Antigravity."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-authors = [{ name = "TimmyTest contributors" }]
+authors = [
+    { name = "Tugra Kaymakcioglu" },
+    { name = "TimmyTest contributors" }
+]
 keywords = [
-    "cli",
-    "testing",
     "test-runner",
-    "diagnostics",
-    "ai-agents",
-    "prompt-generator",
+    "ai-agent",
+    "token-saver",
     "claude-code",
     "codex",
-    "antigravity",
     "cursor",
-    "copilot",
+    "antigravity",
+    "prompt-engineering",
     "pytest",
     "vitest",
     "jest",
-    "cargo",
+    "cargo-test",
     "go-test",
     "code-coverage",
     "test-gap-analysis",
-    "ast-scanner",
     "developer-tools",
+    "ast-scanner",
+    "diagnostics",
+    "cli",
+    "python"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -43,8 +47,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Software Development :: Testing",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
     "Topic :: Utilities",
 ]
 dependencies = [
@@ -56,7 +60,9 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/tugrakaymakcioglu/TimmyTest"
+Repository = "https://github.com/tugrakaymakcioglu/TimmyTest.git"
 Issues = "https://github.com/tugrakaymakcioglu/TimmyTest/issues"
+Changelog = "https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/CHANGELOG.md"
 
 [project.scripts]
 timmytest = "timmytest.cli:app"
