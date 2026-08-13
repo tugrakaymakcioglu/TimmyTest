@@ -1,0 +1,112 @@
+"""AI Agent Prompt Generator for TimmyTest.
+
+Produces high-density, token-optimized instructions for AI coding agents
+such as Claude Code, OpenAI Codex, Antigravity, Cursor, and Copilot.
+"""
+
+from timmytest.detector.models import Priority, ProjectInfo, TestRunResult
+
+
+def generate_agent_prompt(
+    project: ProjectInfo,
+    test_run: TestRunResult,
+    max_trace_lines: int = 8,
+) -> str:
+    """
+    Constructs an ultra-dense, actionable prompt for an AI agent.
+    """
+    lines: list[str] = []
+
+    # Title & High-level Status
+    lines.append("### ⚡ TimmyTest Diagnostic Handoff for AI Agent")
+    lines.append(
+        f"**Project**: `{project.project_name}` ({project.ecosystem.value.title()} / {project.test_framework.value})"
+    )
+
+    if test_run.has_executed:
+        pass_rate = round((test_run.passed / test_run.total) * 100, 1) if test_run.total > 0 else 0.0
+        lines.append(
+            f"**Test Results**: {test_run.passed} Passed, {test_run.failed} Failed, {test_run.skipped} Skipped "
+            f"({pass_rate}% Pass Rate) | Test Readiness Score: {project.readiness_score}%"
+        )
+    else:
+        lines.append(
+            f"**Test Status**: Static Scan Only | Test Readiness Score: {project.readiness_score}% "
+            f"({len(project.test_modules)} test files, {len(project.test_gaps)} untested modules)"
+        )
+
+    lines.append(f"**Test Runner Command**: `{project.test_command or test_run.command or 'pytest'}`")
+    lines.append("")
+
+    # Section 1: Failing Tests
+    if test_run.failures:
+        lines.append(f"#### ❌ Failing Tests ({len(test_run.failures)})")
+        for idx, fail in enumerate(test_run.failures, start=1):
+            location_str = (
+                f" (`{fail.file_path}:{fail.line_number}`)" if fail.file_path and fail.line_number else ""
+            )
+            lines.append(f"{idx}. **Test**: `{fail.test_name}`{location_str}")
+            lines.append(f"   - **Error Type**: `{fail.error_type}`")
+            lines.append(f"   - **Message**: {fail.message}")
+            if fail.suggested_fix:
+                lines.append(f"   - **Suggested Fix**: {fail.suggested_fix}")
+
+            # Add short traceback snippet if present
+            if fail.traceback:
+                tb_lines = [tb_line for tb_line in fail.traceback.splitlines() if tb_line.strip()][
+                    -max_trace_lines:
+                ]
+                lines.append("   - **Traceback Snippet**:")
+                lines.append("     ```")
+                for tbl in tb_lines:
+                    lines.append(f"     {tbl}")
+                lines.append("     ```")
+        lines.append("")
+    elif test_run.has_executed and test_run.failed == 0:
+        lines.append("#### ✅ Existing Tests: All Passing (0 Failures)")
+        lines.append("")
+
+    # Section 2: Missing Test Modules / Test Gaps
+    if project.test_gaps:
+        lines.append(f"#### ⚠️ Missing Test Modules & Gaps ({len(project.test_gaps)})")
+        for idx, gap in enumerate(project.test_gaps, start=1):
+            badge = f"[{gap.priority.value}]"
+            targets: list[str] = []
+            if gap.classes_to_test:
+                targets.append(f"Classes: {', '.join(gap.classes_to_test[:3])}")
+            if gap.functions_to_test:
+                targets.append(f"Functions: {', '.join(gap.functions_to_test[:4])}")
+            target_str = f" ({'; '.join(targets)})" if targets else ""
+
+            lines.append(
+                f"{idx}. **{badge}** Source: `{gap.source_module}` -> Expected Test: `{gap.suggested_test_file}`{target_str}"
+            )
+            lines.append(f"   - Reason: {gap.reason}")
+        lines.append("")
+
+    # Section 3: Direct Action Items for AI Agent
+    lines.append("#### 🎯 Instructions & Next Steps for AI Agent")
+    step_num = 1
+    if test_run.failures:
+        lines.append(
+            f"{step_num}. **Fix Failing Tests**: Investigate and resolve the {len(test_run.failures)} test failure(s) listed above."
+        )
+        step_num += 1
+
+    high_gaps = [g for g in project.test_gaps if g.priority == Priority.HIGH]
+    if high_gaps:
+        lines.append(
+            f"{step_num}. **Write Missing High-Priority Tests**: Create unit/integration test files for the {len(high_gaps)} high-priority module(s) (e.g. `{high_gaps[0].suggested_test_file}`)."
+        )
+        step_num += 1
+    elif project.test_gaps:
+        lines.append(
+            f"{step_num}. **Increase Test Coverage**: Create unit tests for missing modules starting with `{project.test_gaps[0].suggested_test_file}`."
+        )
+        step_num += 1
+
+    lines.append(
+        f"{step_num}. **Verify**: Run `{project.test_command or 'pytest'}` locally to ensure all tests pass cleanly without errors."
+    )
+
+    return "\n".join(lines)

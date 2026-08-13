@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "timmytest"
+version = "0.1.0"
+description = "Zero-token terminal test runner, project test-gap analyzer, and AI agent prompt generator."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [{ name = "TimmyTest contributors" }]
+keywords = [
+    "cli",
+    "testing",
+    "test-runner",
+    "diagnostics",
+    "ai-agents",
+    "prompt-generator",
+    "pytest",
+    "vitest",
+    "jest",
+    "cargo",
+    "go-test",
+    "code-coverage",
+]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "typer>=0.12.5",
+    "rich>=13.8.0",
+    "pydantic>=2.9.0",
+    "PyYAML>=6.0.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/tugrakaymakcioglu/TimmyTest"
+Issues = "https://github.com/tugrakaymakcioglu/TimmyTest/issues"
+
+[project.scripts]
+timmytest = "timmytest.cli:app"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.9",
+    "mypy>=1.11.2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/timmytest"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+disallow_untyped_defs = false
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
