@@ -19,16 +19,28 @@ class GoRunner(BaseRunner):
         custom_cmd: str | None = None,
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
+        test_paths: list[str] | None = None,
     ) -> TestRunResult:
         cmd_target: list[str] | str
         if custom_cmd:
-            cmd_target = custom_cmd
-            display_cmd = custom_cmd
+            if test_paths:
+                import shlex
+
+                parts = shlex.split(custom_cmd)
+                parts.extend(test_paths)
+                cmd_target = parts
+                display_cmd = " ".join(parts)
+            else:
+                cmd_target = custom_cmd
+                display_cmd = custom_cmd
         else:
             args = ["go", "test", "-v"]
             if filter_pattern:
                 args.extend(["-run", filter_pattern])
-            args.append("./...")
+            if test_paths:
+                args.extend(test_paths)
+            else:
+                args.append("./...")
             cmd_target = args
             display_cmd = " ".join(args)
 

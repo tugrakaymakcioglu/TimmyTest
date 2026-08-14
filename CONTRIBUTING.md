@@ -49,6 +49,17 @@ Before submitting a pull request, please ensure all checks pass:
 
 ---
 
+## 🧠 A note on `registry/learned.yaml`
+
+`src/timmytest/registry/learned.yaml` is **machine-generated** — it is an overlay
+of detection rules mined from real open-source repositories and merged on top of
+the hand-curated `ecosystems.yaml` at load time. Do not edit it by hand; changes
+there are overwritten on the next regeneration. To adjust detection, edit
+`ecosystems.yaml`, which always wins on anything the overlay is not allowed to
+touch (test commands in particular).
+
+---
+
 ## 📝 Pull Request Guidelines
 
 - Create a feature branch (`git checkout -b feature/my-new-feature`).

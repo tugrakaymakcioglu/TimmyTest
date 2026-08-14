@@ -51,22 +51,35 @@ IGNORED_FILES = {
 }
 
 
-def _is_test_file(path: Path) -> bool:
-    """Determine if a file is a test file."""
-    name = path.name.lower()
-    parent_names = [p.name.lower() for p in path.parents]
+TEST_DIR_NAMES = {"tests", "test", "__tests__", "spec", "specs"}
 
-    if (
-        "tests" in parent_names
-        or "test" in parent_names
-        or "__tests__" in parent_names
-        or "spec" in parent_names
-        or "specs" in parent_names
-    ):
+
+def _is_test_file(path: Path, root: Path | None = None) -> bool:
+    """Determine if a file is a test file.
+
+    ``root`` bounds the directory-name check to the project. Without it, every
+    ancestor up to the filesystem root is inspected, so a project that merely
+    *lives* under a folder called ``test`` (``C:\\dev\\test\\myapp``) would have
+    every one of its source files classified as a test - reporting zero source
+    modules, zero gaps, and a perfect readiness score.
+    """
+    name = path.name.lower()
+
+    if root is not None:
+        try:
+            relative_parts = path.resolve().relative_to(root.resolve()).parts[:-1]
+        except (ValueError, OSError):
+            relative_parts = path.parts[:-1]
+        parent_names = [part.lower() for part in relative_parts]
+    else:
+        parent_names = [p.name.lower() for p in path.parents]
+
+    if any(part in TEST_DIR_NAMES for part in parent_names):
         return True
 
     return bool(
         name.startswith("test_")
+        or name.startswith("test-")
         or name.endswith("_test.py")
         or name.endswith(".test.js")
         or name.endswith(".test.ts")
@@ -82,6 +95,51 @@ def _is_test_file(path: Path) -> bool:
         or name.endswith("_spec.rb")
         or name.endswith("test.cs")
         or name.endswith("test.java")
+        # Kotlin / Scala / Swift / Dart / Elixir / Haskell
+        or name.endswith("Test.kt")
+        or name.endswith("Tests.kt")
+        or name.endswith("Spec.scala")
+        or name.endswith("Suite.scala")
+        or name.endswith("Test.scala")
+        or name.endswith("Tests.swift")
+        or name.endswith("Test.swift")
+        or name.endswith("_test.dart")
+        or name.endswith("_test.exs")
+        or name.endswith("Spec.hs")
+        or name.endswith("Test.hs")
+        # C / C++
+        or name.endswith("_test.c")
+        or name.endswith("_test.cpp")
+        or name.endswith("_test.cc")
+        or name.endswith("Test.cpp")
+        or name.endswith("Test.cc")
+        # Lua / Crystal / Clojure
+        or name.endswith("_spec.lua")
+        or name.endswith("_spec.cr")
+        or name.endswith("_test.clj")
+        or name.endswith("_test.cljs")
+        # Shell / PowerShell / Groovy / SQL / Terraform
+        or name.endswith(".bats")
+        or name.endswith(".tests.ps1")
+        or name.endswith("_test.ps1")
+        or name.endswith("spec.groovy")
+        or name.endswith("test.groovy")
+        or name.endswith("_test.sql")
+        or name.endswith(".tftest.hcl")
+        # Solidity (Foundry `*.t.sol`) / Elm
+        or name.endswith(".t.sol")
+        or name.endswith("test.elm")
+        or name.endswith("tests.elm")
+        # Erlang / OCaml / Nim / D / V
+        or name.endswith("_tests.erl")
+        or name.endswith("_test.erl")
+        or name.endswith("_test.ml")
+        or name.endswith("_test.nim")
+        or name.endswith("_test.jl")
+        or name.endswith("_test.d")
+        or name.endswith("_test.v")
+        # Perl (`.t` test files)
+        or name.endswith(".t")
     )
 
 
@@ -395,6 +453,59 @@ def scan_project_structure(
         ".rb",
         ".cs",
         ".java",
+        ".kt",
+        ".kts",
+        ".scala",
+        ".sc",
+        ".fs",
+        ".vb",
+        ".swift",
+        ".dart",
+        ".ex",
+        ".exs",
+        ".hs",
+        ".lhs",
+        ".c",
+        ".h",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".hh",
+        ".lua",
+        ".pl",
+        ".pm",
+        ".t",
+        ".zig",
+        ".cr",
+        ".clj",
+        ".cljs",
+        ".cljc",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".bats",
+        ".sql",
+        ".tf",
+        ".tfvars",
+        ".hcl",
+        ".ps1",
+        ".psm1",
+        ".psd1",
+        ".r",
+        ".R",
+        ".jl",
+        ".groovy",
+        ".gradle",
+        ".erl",
+        ".hrl",
+        ".nim",
+        ".ml",
+        ".mli",
+        ".sol",
+        ".elm",
+        ".d",
+        ".v",
     }
 
     for item in root.rglob("*"):
@@ -410,7 +521,7 @@ def scan_project_structure(
             continue
 
         rel_path = item.relative_to(root).as_posix()
-        is_test = _is_test_file(item)
+        is_test = _is_test_file(item, root)
 
         if is_test:
             if item.suffix == ".py":

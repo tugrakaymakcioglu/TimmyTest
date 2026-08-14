@@ -1,0 +1,534 @@
+# TimmyTest ecosystem & test-framework detection registry.
+#
+# This is the single source of truth for "what languages and test frameworks
+# TimmyTest can detect". Adding a new language = add one entry here (no Python
+# changes needed). Entries are checked in order; the first ecosystem whose
+# `config_files` match wins.
+#
+# Framework selection signals (first matching framework wins):
+#   config_files       - any listed file present at the project root
+#   dependency_in      - package name present in package.json deps/devDeps
+#   script_contains    - substring present in the package.json "test" script
+#   config_content     - {contains: [...], not_contains: [...]} on the config file
+#   default: true      - fallback framework when no other signal matches
+#
+# Command templates support `{runner}` (npx/pnpm/yarn/bun) and `{pm}`
+# (npm/pnpm/yarn/bun) placeholders, resolved from `package_managers`.
+version: 1
+
+ecosystems:
+  - id: python
+    name: Python
+    extensions: [".py"]
+    config_files:
+      [pyproject.toml, requirements.txt, setup.py, setup.cfg, Pipfile, uv.lock, poetry.lock, pdm.lock, pytest.ini, tox.ini]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: pytest
+        name: Pytest
+        default: true
+        command: "pytest -ra"
+        command_variants:
+          - when_file: uv.lock
+            command: "uv run pytest -ra"
+          - when_file: poetry.lock
+            command: "poetry run pytest -ra"
+          - when_file: pdm.lock
+            command: "pdm run pytest -ra"
+          - when_file: Pipfile
+            command: "pipenv run pytest -ra"
+        test_patterns: ["test_*.py", "*_test.py"]
+      - id: unittest
+        name: Unittest
+        command: "python -m unittest discover -s tests"
+        config_content:
+          contains: ["unittest"]
+          not_contains: ["pytest"]
+        test_patterns: ["test_*.py"]
+
+  - id: solidity
+    name: Solidity / Smart Contracts
+    extensions: [".sol"]
+    config_files: [foundry.toml, hardhat.config.js, hardhat.config.ts, truffle-config.js]
+    requires_extensions: [".sol"]
+    test_dirs: [test, tests]
+    frameworks:
+      - id: foundry
+        name: Foundry (Forge)
+        config_files: [foundry.toml]
+        command: "forge test"
+        test_patterns: ["*.t.sol"]
+      - id: hardhat
+        name: Hardhat
+        config_files: [hardhat.config.js, hardhat.config.ts]
+        command: "npx hardhat test"
+        test_patterns: ["*.test.js", "*.test.ts"]
+
+  - id: node
+    name: Node.js / JavaScript / TypeScript
+    extensions: [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"]
+    config_files:
+      [package.json, deno.json, deno.jsonc, tsconfig.json, vitest.config.ts, vitest.config.js, jest.config.js, jest.config.ts, pnpm-lock.yaml, yarn.lock, bun.lockb, bun.lock]
+    test_dirs: [tests, test, __tests__, specs, spec]
+    package_managers:
+      - when_file: pnpm-lock.yaml
+        name: pnpm
+      - when_file: yarn.lock
+        name: yarn
+      - when_file: bun.lockb
+        name: bun
+      - when_file: bun.lock
+        name: bun
+      - name: npm
+    frameworks:
+      - id: deno
+        name: Deno Test
+        config_files: [deno.json, deno.jsonc]
+        command: "deno test"
+        test_patterns: ["*_test.ts", "*_test.js", "*_test.tsx", "*_test.jsx"]
+      - id: vitest
+        name: Vitest
+        dependency_in: [vitest]
+        script_contains: [vitest]
+        command: "{runner} vitest run"
+        test_patterns: ["*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.test.tsx", "*.test.jsx"]
+      - id: jest
+        name: Jest
+        dependency_in: [jest]
+        script_contains: [jest]
+        command: "{runner} jest"
+        test_patterns: ["*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.test.tsx", "*.test.jsx"]
+      - id: mocha
+        name: Mocha
+        dependency_in: [mocha]
+        command: "{runner} mocha"
+        test_patterns: ["*.test.js", "*.spec.js"]
+      - id: playwright
+        name: Playwright
+        dependency_in: [playwright, "@playwright/test"]
+        command: "{runner} playwright test"
+        test_patterns: ["*.spec.ts", "*.spec.js"]
+      - id: custom
+        name: package.json test script
+        default: true
+        command: "{pm} test"
+        test_patterns: ["*.test.js", "*.spec.js", "*.test.ts", "*.spec.ts"]
+
+  - id: rust
+    name: Rust
+    extensions: [".rs"]
+    config_files: [Cargo.toml]
+    test_dirs: [tests]
+    frameworks:
+      - id: cargo
+        name: Cargo Test
+        default: true
+        command: "cargo test"
+        test_patterns: ["*_test.rs", "#[test]"]
+
+  - id: go
+    name: Go
+    extensions: [".go"]
+    config_files: [go.mod, "*.go"]
+    test_dirs: []
+    frameworks:
+      - id: go_test
+        name: Go Test
+        default: true
+        command: "go test ./..."
+        test_patterns: ["*_test.go"]
+
+  - id: kotlin
+    name: Kotlin
+    extensions: [".kt", ".kts"]
+    config_files: [build.gradle.kts, build.gradle, pom.xml]
+    requires_extensions: [".kt"]
+    test_dirs: [src/test/kotlin, src/test]
+    frameworks:
+      - id: kotlin_test
+        name: Kotlin Test / JUnit
+        default: true
+        command: "./gradlew test"
+        command_variants:
+          - when_file: pom.xml
+            command: "mvn test"
+        test_patterns: ["*Test.kt", "*Tests.kt"]
+
+  - id: java
+    name: Java
+    extensions: [".java"]
+    config_files: [pom.xml, build.gradle, build.gradle.kts]
+    test_dirs: [src/test/java, src/test]
+    frameworks:
+      - id: maven
+        name: Maven / JUnit
+        config_files: [pom.xml]
+        command: "mvn test"
+        test_patterns: ["*Test.java", "*Tests.java", "*IT.java"]
+      - id: gradle
+        name: Gradle / JUnit
+        default: true
+        config_files: [build.gradle, build.gradle.kts]
+        command: "gradle test"
+        command_variants:
+          - when_file: gradlew
+            command: "./gradlew test"
+        test_patterns: ["*Test.java", "*Tests.java"]
+
+  - id: scala
+    name: Scala
+    extensions: [".scala", ".sc"]
+    config_files: [build.sbt, project/build.properties]
+    test_dirs: [src/test/scala, src/test]
+    frameworks:
+      - id: scalatest
+        name: ScalaTest / MUnit
+        default: true
+        command: "sbt test"
+        test_patterns: ["*Spec.scala", "*Suite.scala", "*Test.scala"]
+
+  - id: dotnet
+    name: C# / .NET
+    extensions: [".cs", ".fs", ".vb"]
+    config_files: ["*.csproj", "*.sln", "*.fsproj", "*.vbproj"]
+    test_dirs: [Tests, tests]
+    frameworks:
+      - id: dotnet_test
+        name: .NET Test (xUnit / NUnit / MSTest)
+        default: true
+        command: "dotnet test"
+        test_patterns: ["*Tests.cs", "*Test.cs", "*Tests.fs"]
+
+  - id: php
+    name: PHP
+    extensions: [".php"]
+    config_files: [composer.json]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: phpunit
+        name: PHPUnit
+        default: true
+        command: "vendor/bin/phpunit"
+        command_variants:
+          - when_file: composer.json
+            command: "composer test"
+        test_patterns: ["*Test.php", "test*.php"]
+
+  - id: ruby
+    name: Ruby
+    extensions: [".rb"]
+    config_files: [Gemfile, "*.gemspec", Rakefile]
+    test_dirs: [spec, test]
+    frameworks:
+      - id: rspec
+        name: RSpec
+        default: true
+        command: "bundle exec rspec"
+        test_patterns: ["*_spec.rb"]
+      - id: minitest
+        name: Minitest
+        command: "bundle exec rake test"
+        config_files: [Rakefile]
+        test_patterns: ["*_test.rb", "test_*.rb"]
+
+  - id: swift
+    name: Swift
+    extensions: [".swift"]
+    config_files: [Package.swift, "*.xcodeproj", "*.xcworkspace"]
+    test_dirs: [Tests, tests]
+    frameworks:
+      - id: xctest
+        name: XCTest
+        default: true
+        command: "swift test"
+        test_patterns: ["*Tests.swift", "*Test.swift"]
+
+  - id: dart
+    name: Dart / Flutter
+    extensions: [".dart"]
+    config_files: [pubspec.yaml]
+    test_dirs: [test, tests]
+    frameworks:
+      - id: dart_test
+        name: package:test
+        default: true
+        command: "dart test"
+        test_patterns: ["*_test.dart"]
+
+  - id: elixir
+    name: Elixir
+    extensions: [".ex", ".exs"]
+    config_files: [mix.exs]
+    test_dirs: [test]
+    frameworks:
+      - id: exunit
+        name: ExUnit
+        default: true
+        command: "mix test"
+        test_patterns: ["*_test.exs"]
+
+  - id: haskell
+    name: Haskell
+    extensions: [".hs", ".lhs"]
+    config_files: ["*.cabal", stack.yaml, cabal.project]
+    test_dirs: [test, tests]
+    frameworks:
+      - id: hspec
+        name: Hspec / HUnit
+        default: true
+        command: "cabal test"
+        command_variants:
+          - when_file: stack.yaml
+            command: "stack test"
+        test_patterns: ["*Spec.hs", "*Test.hs"]
+
+  - id: erlang
+    name: Erlang
+    extensions: [".erl", ".hrl"]
+    config_files: [rebar.config]
+    test_dirs: [test, tests]
+    frameworks:
+      - id: eunit
+        name: EUnit
+        default: true
+        command: "rebar3 eunit"
+        test_patterns: ["*_tests.erl", "*_test.erl"]
+
+  - id: ocaml
+    name: OCaml
+    extensions: [".ml", ".mli"]
+    config_files: [dune-project, "*.opam"]
+    test_dirs: [test, tests]
+    frameworks:
+      - id: dune_test
+        name: Dune Test (Alcotest / OUnit)
+        default: true
+        command: "dune runtest"
+        test_patterns: ["*_test.ml", "test_*.ml"]
+
+  - id: nim
+    name: Nim
+    extensions: [".nim"]
+    config_files: ["*.nimble", nim.cfg]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: nim_test
+        name: Nim Test (unittest)
+        default: true
+        command: "nimble test"
+        test_patterns: ["test_*.nim", "*_test.nim"]
+
+  - id: r
+    name: R
+    extensions: [".r", ".R"]
+    config_files: [DESCRIPTION, NAMESPACE]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: testthat
+        name: testthat
+        default: true
+        command: 'Rscript -e "testthat::test_dir(\"tests\")"'
+        test_patterns: ["test-*.R", "test_*.R", "test-*.r", "test_*.r"]
+
+  - id: julia
+    name: Julia
+    extensions: [".jl"]
+    config_files: [Project.toml, Manifest.toml]
+    test_dirs: [test, tests]
+    frameworks:
+      - id: julia_test
+        name: Julia Test (built-in)
+        default: true
+        command: "julia --project -e 'using Pkg; Pkg.test()'"
+        test_patterns: ["runtests.jl", "*_test.jl"]
+
+  - id: groovy
+    name: Groovy
+    extensions: [".groovy", ".gradle"]
+    config_files: [Jenkinsfile, "*.groovy"]
+    test_dirs: [src/test/groovy, test, tests]
+    frameworks:
+      - id: spock
+        name: Spock
+        default: true
+        command: "./gradlew test"
+        test_patterns: ["*Spec.groovy", "*Test.groovy"]
+
+  - id: terraform
+    name: Terraform / HCL
+    extensions: [".tf", ".tfvars", ".hcl"]
+    config_files: ["*.tf"]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: terraform_test
+        name: Terraform Test
+        default: true
+        command: "terraform test"
+        test_patterns: ["*.tftest.hcl"]
+
+  - id: sql
+    name: SQL / dbt
+    extensions: [".sql"]
+    config_files: [dbt_project.yml]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: dbt
+        name: dbt
+        default: true
+        command: "dbt test"
+        test_patterns: ["*_test.sql", "test_*.sql"]
+
+  - id: powershell
+    name: PowerShell
+    extensions: [".ps1", ".psm1", ".psd1"]
+    config_files: ["*.psd1", "*.psm1"]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: pester
+        name: Pester
+        default: true
+        command: "Invoke-Pester"
+        test_patterns: ["*.Tests.ps1", "*_test.ps1"]
+
+  - id: shell
+    name: Shell / Bash
+    extensions: [".sh", ".bash", ".zsh", ".bats"]
+    config_files: ["**/*.bats"]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: bats
+        name: Bats
+        default: true
+        command: "bats test"
+        test_patterns: ["*.bats"]
+
+  - id: elm
+    name: Elm
+    extensions: [".elm"]
+    config_files: [elm.json]
+    test_dirs: [tests]
+    frameworks:
+      - id: elm_test
+        name: elm-test
+        default: true
+        command: "elm-test"
+        test_patterns: ["*Test.elm", "*Tests.elm"]
+
+  - id: d
+    name: D
+    extensions: [".d"]
+    config_files: [dub.json, dub.sdl]
+    test_dirs: [tests, test, source]
+    frameworks:
+      - id: dub_test
+        name: DUB Test (unittest)
+        default: true
+        command: "dub test"
+        test_patterns: ["*_test.d", "test_*.d"]
+
+  - id: v
+    name: V
+    extensions: [".v"]
+    config_files: [v.mod]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: v_test
+        name: V Test (built-in)
+        default: true
+        command: "v test ."
+        test_patterns: ["*_test.v"]
+
+  - id: c
+    name: C
+    extensions: [".c", ".h"]
+    config_files: [Makefile, CMakeLists.txt, meson.build, configure.ac]
+    requires_extensions: [".c"]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: ctest
+        name: CTest / Make test
+        default: true
+        command: "ctest --output-on-failure"
+        command_variants:
+          - when_file: Makefile
+            command: "make test"
+        test_patterns: ["test_*.c", "*_test.c"]
+
+  - id: cpp
+    name: C++
+    extensions: [".cpp", ".cc", ".cxx", ".hpp", ".hh"]
+    config_files: [CMakeLists.txt, Makefile, meson.build]
+    requires_extensions: [".cpp", ".cc", ".cxx"]
+    test_dirs: [tests, test]
+    frameworks:
+      - id: gtest
+        name: GoogleTest / Catch2
+        default: true
+        command: "ctest --output-on-failure"
+        command_variants:
+          - when_file: Makefile
+            command: "make test"
+        test_patterns: ["test_*.cpp", "*_test.cpp", "*Test.cpp"]
+
+  - id: lua
+    name: Lua
+    extensions: [".lua"]
+    config_files: ["*.rockspec", ".busted"]
+    test_dirs: [spec, test, tests]
+    frameworks:
+      - id: busted
+        name: Busted
+        default: true
+        command: "busted"
+        test_patterns: ["*_spec.lua", "test_*.lua"]
+
+  - id: perl
+    name: Perl
+    extensions: [".pl", ".pm", ".t"]
+    config_files: [Makefile.PL, cpanfile, Build.PL]
+    test_dirs: [t, tests]
+    frameworks:
+      - id: prove
+        name: Test::More (prove)
+        default: true
+        command: "prove -lr t"
+        test_patterns: ["*.t"]
+
+  - id: zig
+    name: Zig
+    extensions: [".zig"]
+    config_files: [build.zig]
+    test_dirs: []
+    frameworks:
+      - id: zig_test
+        name: Zig Test (built-in)
+        default: true
+        command: "zig build test"
+        test_patterns: ["test {", "test_*"]
+
+  - id: crystal
+    name: Crystal
+    extensions: [".cr"]
+    config_files: [shard.yml]
+    test_dirs: [spec]
+    frameworks:
+      - id: crystal_spec
+        name: Crystal Spec
+        default: true
+        command: "crystal spec"
+        test_patterns: ["*_spec.cr"]
+
+  - id: clojure
+    name: Clojure
+    extensions: [".clj", ".cljs", ".cljc"]
+    config_files: [project.clj, deps.edn]
+    test_dirs: [test]
+    frameworks:
+      - id: clojure_test
+        name: clojure.test
+        default: true
+        command: "lein test"
+        command_variants:
+          - when_file: deps.edn
+            command: "clojure -M:test"
+        test_patterns: ["*_test.clj"]

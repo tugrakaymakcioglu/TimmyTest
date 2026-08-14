@@ -128,6 +128,44 @@ def test_orchestrator_multi_ecosystem(temp_project_dir: Path):
     assert "mvn_test_ran" in result.raw_output
 
 
+def test_orchestrator_explicit_ecosystem_beats_can_handle(temp_project_dir: Path):
+    """A Java project with a stray package.json must still route to Java, not Node."""
+    (temp_project_dir / "pom.xml").write_text("<project></project>", encoding="utf-8")
+    (temp_project_dir / "package.json").write_text("{}", encoding="utf-8")
+    result = run_project_tests(
+        temp_project_dir,
+        Ecosystem.JAVA,
+        TestFramework.MAVEN,
+        timeout_seconds=30,
+    )
+    assert result.ecosystem == Ecosystem.JAVA
+    assert result.command == "mvn test"
+
+
+def test_orchestrator_unknown_ecosystem_sniffs(temp_project_dir: Path):
+    """UNKNOWN ecosystem falls back to can_handle sniffing (Python via pyproject.toml)."""
+    import sys
+
+    (temp_project_dir / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
+    # Provide a pytest that exists on PATH for deterministic routing.
+    result = run_project_tests(
+        temp_project_dir,
+        Ecosystem.UNKNOWN,
+        TestFramework.UNKNOWN,
+        custom_cmd=f'"{sys.executable}" -c "print(\'sniffed\')"',
+    )
+    assert result.has_executed is True
+
+
+def test_python_runner_runs_with_test_paths(temp_project_dir: Path):
+    """Incremental test_paths targets a specific test file and executes it."""
+    (temp_project_dir / "test_thing.py").write_text("def test_ok():\n    assert 1 == 1\n", encoding="utf-8")
+    result = PythonRunner().run_tests(temp_project_dir, test_paths=["test_thing.py"], timeout_seconds=60)
+    assert result.has_executed is True
+    assert result.passed == 1
+    assert result.failed == 0
+
+
 def test_generic_runner(temp_project_dir: Path):
     import sys
 
@@ -141,6 +179,18 @@ def test_generic_runner(temp_project_dir: Path):
         custom_cmd=f'"{py_exe}" -c "import sys; sys.exit(0)"',
     )
     assert res.has_executed is True
-    assert res.passed == 1
+    # The generic runner cannot parse arbitrary command output, so it reports
+    # counts honestly (0/0) instead of fabricating "1 passed".
+    assert res.exit_code == 0
+    assert res.passed == 0
     assert res.failed == 0
+
+    # A failing generic command is reported as one failure, not fabricated pass.
+    res_fail = runner.run_tests(
+        temp_project_dir,
+        custom_cmd=f'"{py_exe}" -c "import sys; sys.exit(1)"',
+    )
+    assert res_fail.has_executed is True
+    assert res_fail.exit_code != 0
+    assert res_fail.failed == 1
 

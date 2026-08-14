@@ -16,22 +16,17 @@ if hasattr(sys.stderr, "reconfigure"):
     with contextlib.suppress(Exception):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from timmytest import __version__
-from timmytest.banner import print_banner
+from timmytest import __version__, flags
+from timmytest.analysis import analyze_project as _analyze_project
+from timmytest.banner import print_banner, show_fullscreen_splash
 from timmytest.config import TimmyConfig, load_project_config
-from timmytest.detector.ecosystem import detect_ecosystem
-from timmytest.detector.gap_analyzer import analyze_test_gaps
-from timmytest.detector.models import (
-    ProjectAudit,
-    ProjectInfo,
-    TestRunResult,
-)
-from timmytest.detector.scanner import scan_project_structure
-from timmytest.diagnostics.analyzer import enrich_test_failures
+from timmytest.detector.models import ProjectAudit
+from timmytest.integrations.installer import integrate_project
+from timmytest.mcp.server import run_mcp_server
 from timmytest.prompt.clipboard import copy_to_clipboard
-from timmytest.prompt.generator import generate_agent_prompt
 from timmytest.reports.console import (
     console,
+    print_coverage_summary,
     print_failures,
     print_project_summary,
     print_prompt_panel,
@@ -39,8 +34,6 @@ from timmytest.reports.console import (
     print_test_run_summary,
 )
 from timmytest.reports.json_export import export_audit_to_json
-from timmytest.reports.markdown import generate_markdown_report
-from timmytest.runner.orchestrator import run_project_tests
 from timmytest.scaffolder.init_tests import initialize_test_scaffold
 
 app = typer.Typer(
@@ -49,6 +42,67 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="rich",
 )
+
+
+@app.callback(invoke_without_command=True)
+def main_callback(
+    ctx: typer.Context,
+    no_banner: Annotated[
+        bool,
+        typer.Option("--no-banner", help="Omit ASCII banner"),
+    ] = False,
+    no_splash: Annotated[
+        bool,
+        typer.Option("--no-splash", help="Skip animated splash screen"),
+    ] = False,
+    classic: Annotated[
+        bool,
+        typer.Option("--classic", help="Print the command list instead of launching the app"),
+    ] = False,
+) -> None:
+    """
+    ⚡ Zero-token terminal test runner, test-gap analyzer, and AI agent prompt generator.
+    """
+    if ctx.invoked_subcommand is None:
+        # Bare `timmytest` opens the full-screen application, but only when a real
+        # terminal is attached - piped output and CI keep the classic command list.
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
+        if not classic and interactive and flags.is_enabled("cli.ui"):
+            from timmytest.tui.app import launch
+
+            launch()
+            raise typer.Exit()
+
+        if not no_banner:
+            if not no_splash:
+                show_fullscreen_splash(animate_progress=True)
+            else:
+                print_banner()
+        console.print("[bold cyan]Commands:[/bold cyan]")
+        console.print("  [bold green]check[/bold green]      Run test suite, analyze failures & gap diagnostics, generate AI prompts")
+        console.print("  [bold green]scan[/bold green]       Fast test-gap scanner without executing test suites")
+        console.print("  [bold green]run[/bold green]        Run tests with live feedback & CI error exit code propagation")
+        console.print("  [bold green]prompt[/bold green]     Extract failures and generate prompt directly for Claude / Cursor / AGY")
+        console.print("  [bold green]init[/bold green]       Scaffold missing test files automatically")
+        console.print("  [bold green]integrate[/bold green]  Configure repository with agent rules & MCP configs")
+        console.print("  [bold green]agent[/bold green]      Direct zero-noise output for AI coding agents")
+        console.print("  [bold green]ui[/bold green]         Launch the full-screen TimmyTest application")
+        console.print("  [bold green]mcp[/bold green]        Start the Model Context Protocol (MCP) server\n")
+        console.print("[dim]Run [bold]timmytest COMMAND --help[/bold] for detailed command options.[/dim]\n")
+        raise typer.Exit()
+
+
+
+
+def _require(feature_key: str) -> None:
+    """Abort the command when its switch is off in the TimmyTestDev panel."""
+    if flags.is_enabled(feature_key):
+        return
+    source = flags.source_path()
+    console.print(f"[bold yellow]⛔ '{feature_key}' is switched off for this install.[/bold yellow]")
+    if source is not None:
+        console.print(f"[dim]Switch file: {source}[/dim]")
+    raise typer.Exit(code=2)
 
 
 def _get_project_mtimes(root: Path, config: TimmyConfig) -> dict[str, float]:
@@ -62,84 +116,6 @@ def _get_project_mtimes(root: Path, config: TimmyConfig) -> dict[str, float]:
             with contextlib.suppress(Exception):
                 mtimes[str(p)] = p.stat().st_mtime
     return mtimes
-
-
-def _analyze_project(
-    project_dir: Path,
-    custom_cmd: str | None = None,
-    execute_tests: bool = True,
-    timeout_seconds: int = 60,
-    filter_pattern: str | None = None,
-    config: TimmyConfig | None = None,
-) -> ProjectAudit:
-    """Core analysis orchestrator."""
-    root = project_dir.resolve()
-    project_name = root.name
-    cfg = config or load_project_config(root)
-
-    # 1. Detect ecosystem & framework
-    ecosystem, framework, default_cmd, configs = detect_ecosystem(root)
-    test_cmd = custom_cmd or cfg.custom_test_cmd or default_cmd
-
-    # 2. Scan source and test files
-    source_modules, test_modules = scan_project_structure(
-        root,
-        ecosystem,
-        framework,
-        custom_ignored_dirs=cfg.ignored_dirs,
-        custom_ignored_files=cfg.ignored_files,
-    )
-
-    # 3. Analyze test gaps
-    gaps, readiness_score = analyze_test_gaps(source_modules, test_modules, ecosystem, root)
-
-    project_info = ProjectInfo(
-        root_dir=str(root),
-        project_name=project_name,
-        ecosystem=ecosystem,
-        test_framework=framework,
-        config_files=configs,
-        test_command=test_cmd,
-        source_modules=source_modules,
-        test_modules=test_modules,
-        test_gaps=gaps,
-        total_source_files=len(source_modules),
-        total_test_files=len(test_modules),
-        readiness_score=readiness_score,
-    )
-
-    # 4. Execute tests if requested
-    if execute_tests and test_modules:
-        effective_timeout = timeout_seconds or cfg.timeout_seconds
-        test_run = run_project_tests(
-            root_dir=root,
-            ecosystem=ecosystem,
-            framework=framework,
-            custom_cmd=test_cmd,
-            timeout_seconds=effective_timeout,
-            filter_pattern=filter_pattern,
-        )
-        test_run = enrich_test_failures(test_run)
-    else:
-        test_run = TestRunResult(
-            ecosystem=ecosystem,
-            framework=framework,
-            command=test_cmd,
-            total=0,
-            has_executed=False,
-        )
-
-    # 5. Generate AI agent prompt
-    agent_prompt = generate_agent_prompt(project_info, test_run)
-
-    # 6. Form unified audit
-    audit = ProjectAudit(
-        project=project_info,
-        test_run=test_run,
-        agent_prompt=agent_prompt,
-    )
-    audit.summary_markdown = generate_markdown_report(audit)
-    return audit
 
 
 @app.command(name="check")
@@ -165,9 +141,9 @@ def check_command(
         typer.Option("--json", "-j", help="Output audit results in JSON format"),
     ] = False,
     timeout: Annotated[
-        int,
-        typer.Option("--timeout", "-t", help="Test execution timeout in seconds"),
-    ] = 60,
+        int | None,
+        typer.Option("--timeout", "-t", help="Test execution timeout in seconds (default: 60, or timeout_seconds from config)"),
+    ] = None,
     filter_pattern: Annotated[
         str | None,
         typer.Option("--filter", "-k", help="Filter tests by name pattern"),
@@ -192,6 +168,26 @@ def check_command(
         bool,
         typer.Option("--watch", "-w", help="Watch for file changes and continuously re-audit"),
     ] = False,
+    changed: Annotated[
+        bool,
+        typer.Option("--changed", help="Run only tests affected by uncommitted changes (vs HEAD)"),
+    ] = False,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Run only tests affected by changes since a git ref (e.g. HEAD~1, main)"),
+    ] = None,
+    coverage: Annotated[
+        bool,
+        typer.Option("--coverage", help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)"),
+    ] = False,
+    coverage_file: Annotated[
+        Path | None,
+        typer.Option("--coverage-file", help="Explicit coverage report path"),
+    ] = None,
+    coverage_threshold: Annotated[
+        float,
+        typer.Option("--coverage-threshold", help="Minimum line coverage %% to flag low-coverage files"),
+    ] = 60.0,
     no_banner: Annotated[
         bool,
         typer.Option("--no-banner", help="Omit ASCII banner"),
@@ -200,7 +196,15 @@ def check_command(
     """
     ⚡ Run complete audit: Scan modules, detect test gaps, run tests, diagnose failures, and generate AI prompt.
     """
+    _require("cli.check")
+    if not flags.is_enabled("core.coverage"):
+        coverage, coverage_file = False, None
+    watch = watch and flags.is_enabled("core.watch")
     config = load_project_config(path)
+    # An explicit --timeout wins; otherwise the project's config does, and only
+    # then the 60s default. Defaulting the option to 60 here would make
+    # `timeout_seconds` in .timmytest.yml unreachable.
+    effective_timeout = timeout if timeout is not None else config.timeout_seconds
     should_run = not (no_run or safe_dry_run)
 
     def _execute_single_audit() -> ProjectAudit:
@@ -208,9 +212,14 @@ def check_command(
             project_dir=path,
             custom_cmd=cmd,
             execute_tests=should_run,
-            timeout_seconds=timeout,
+            timeout_seconds=effective_timeout,
             filter_pattern=filter_pattern,
             config=config,
+            coverage=coverage,
+            coverage_path=coverage_file,
+            coverage_threshold=coverage_threshold,
+            changed=changed,
+            since=since,
         )
 
         if json_output:
@@ -225,6 +234,8 @@ def check_command(
             print_test_run_summary(audit.test_run)
             print_failures(audit.test_run)
         print_test_gaps(audit.project)
+        if audit.project.coverage is not None:
+            print_coverage_summary(audit.project.coverage)
 
         copied = False
         if copy_prompt_flag and config.copy_prompt:
@@ -281,6 +292,18 @@ def scan_command(
         bool,
         typer.Option("--json", "-j", help="Output scan results in JSON format"),
     ] = False,
+    coverage: Annotated[
+        bool,
+        typer.Option("--coverage", help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)"),
+    ] = False,
+    coverage_file: Annotated[
+        Path | None,
+        typer.Option("--coverage-file", help="Explicit coverage report path"),
+    ] = None,
+    coverage_threshold: Annotated[
+        float,
+        typer.Option("--coverage-threshold", help="Minimum line coverage %% to flag low-coverage files"),
+    ] = 60.0,
     no_banner: Annotated[
         bool,
         typer.Option("--no-banner", help="Omit ASCII banner"),
@@ -289,7 +312,16 @@ def scan_command(
     """
     🔍 Fast static scan: Discover source modules, existing test files, and missing test gaps.
     """
-    audit = _analyze_project(project_dir=path, execute_tests=False)
+    _require("cli.scan")
+    if not flags.is_enabled("core.coverage"):
+        coverage, coverage_file = False, None
+    audit = _analyze_project(
+        project_dir=path,
+        execute_tests=False,
+        coverage=coverage,
+        coverage_path=coverage_file,
+        coverage_threshold=coverage_threshold,
+    )
 
     if json_output:
         typer.echo(export_audit_to_json(audit))
@@ -300,6 +332,8 @@ def scan_command(
 
     print_project_summary(audit.project)
     print_test_gaps(audit.project)
+    if audit.project.coverage is not None:
+        print_coverage_summary(audit.project.coverage)
 
 
 @app.command(name="run")
@@ -309,9 +343,9 @@ def run_command(
         typer.Argument(help="Target project directory path", exists=True, file_okay=False, dir_okay=True),
     ] = Path("."),
     timeout: Annotated[
-        int,
-        typer.Option("--timeout", "-t", help="Test execution timeout in seconds"),
-    ] = 60,
+        int | None,
+        typer.Option("--timeout", "-t", help="Test execution timeout in seconds (default: 60, or timeout_seconds from config)"),
+    ] = None,
     filter_pattern: Annotated[
         str | None,
         typer.Option("--filter", "-k", help="Filter tests by name pattern"),
@@ -332,6 +366,26 @@ def run_command(
         bool,
         typer.Option("--watch", "-w", help="Watch for file changes and continuously re-run tests"),
     ] = False,
+    changed: Annotated[
+        bool,
+        typer.Option("--changed", help="Run only tests affected by uncommitted changes (vs HEAD)"),
+    ] = False,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Run only tests affected by changes since a git ref (e.g. HEAD~1, main)"),
+    ] = None,
+    coverage: Annotated[
+        bool,
+        typer.Option("--coverage", help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)"),
+    ] = False,
+    coverage_file: Annotated[
+        Path | None,
+        typer.Option("--coverage-file", help="Explicit coverage report path"),
+    ] = None,
+    coverage_threshold: Annotated[
+        float,
+        typer.Option("--coverage-threshold", help="Minimum line coverage %% to flag low-coverage files"),
+    ] = 60.0,
     no_banner: Annotated[
         bool,
         typer.Option("--no-banner", help="Omit ASCII banner"),
@@ -340,16 +394,26 @@ def run_command(
     """
     ⚡ Execute tests, parse PASS/FAIL results, and display rich failure diagnostics & fix suggestions.
     """
+    _require("cli.run")
+    if not flags.is_enabled("core.coverage"):
+        coverage, coverage_file = False, None
+    watch = watch and flags.is_enabled("core.watch")
     config = load_project_config(path)
+    effective_timeout = timeout if timeout is not None else config.timeout_seconds
 
     def _execute_run() -> ProjectAudit:
         audit = _analyze_project(
             project_dir=path,
             custom_cmd=cmd,
             execute_tests=True,
-            timeout_seconds=timeout,
+            timeout_seconds=effective_timeout,
             filter_pattern=filter_pattern,
             config=config,
+            coverage=coverage,
+            coverage_path=coverage_file,
+            coverage_threshold=coverage_threshold,
+            changed=changed,
+            since=since,
         )
 
         if json_output:
@@ -362,6 +426,8 @@ def run_command(
         if not only_failures:
             print_project_summary(audit.project)
             print_test_run_summary(audit.test_run)
+            if audit.project.coverage is not None:
+                print_coverage_summary(audit.project.coverage)
 
         print_failures(audit.test_run)
         return audit
@@ -409,10 +475,15 @@ def prompt_command(
         bool,
         typer.Option("--raw", help="Output raw prompt text without TUI panel"),
     ] = False,
+    no_banner: Annotated[
+        bool,
+        typer.Option("--no-banner", help="Omit ASCII banner (kept for CLI consistency)"),
+    ] = False,
 ) -> None:
     """
     🤖 Generate an ultra-dense, token-optimized prompt for AI coding agents.
     """
+    _require("cli.prompt")
     audit = _analyze_project(project_dir=path, execute_tests=not no_run)
 
     copied = False
@@ -435,10 +506,15 @@ def init_command(
         Path,
         typer.Argument(help="Target project directory path", exists=True, file_okay=False, dir_okay=True),
     ] = Path("."),
+    no_banner: Annotated[
+        bool,
+        typer.Option("--no-banner", help="Omit ASCII banner (kept for CLI consistency)"),
+    ] = False,
 ) -> None:
     """
     🛠️ Initialize starter test scaffolding and tailored test suites for discovered modules.
     """
+    _require("cli.init")
     audit = _analyze_project(project_dir=path, execute_tests=False)
     created = initialize_test_scaffold(audit.project, path)
 
@@ -450,8 +526,189 @@ def init_command(
         console.print("[bold yellow]Test infrastructure already exists or no new files needed.[/bold yellow]")
 
 
+@app.command(name="integrate")
+@app.command(name="setup")
+def integrate_command(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Target project directory path", exists=True, file_okay=False, dir_okay=True),
+    ] = Path("."),
+    cursor: Annotated[
+        bool,
+        typer.Option("--cursor/--no-cursor", help="Generate Cursor AI rule files (.cursorrules, .cursor/rules/)"),
+    ] = True,
+    claude: Annotated[
+        bool,
+        typer.Option("--claude/--no-claude", help="Generate Claude Code instructions (CLAUDE.md)"),
+    ] = True,
+    copilot: Annotated[
+        bool,
+        typer.Option("--copilot/--no-copilot", help="Generate GitHub Copilot instructions (.github/copilot-instructions.md)"),
+    ] = True,
+    agents: Annotated[
+        bool,
+        typer.Option("--agents/--no-agents", help="Generate Universal Agent guide (AGENTS.md)"),
+    ] = True,
+    config: Annotated[
+        bool,
+        typer.Option("--config/--no-config", help="Generate TimmyTest configuration (.timmytest.yml)"),
+    ] = True,
+    ci: Annotated[
+        bool,
+        typer.Option("--ci/--no-ci", help="Generate GitHub Actions CI workflow (.github/workflows/timmytest.yml)"),
+    ] = False,
+    mcp: Annotated[
+        bool,
+        typer.Option("--mcp/--no-mcp", help="Generate MCP configuration snippet (.cursor/mcp.json)"),
+    ] = True,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Re-integrate even if TimmyTest rules are already present (appends; never overwrites existing content)"),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Preview file changes without writing to disk"),
+    ] = False,
+    no_banner: Annotated[
+        bool,
+        typer.Option("--no-banner", help="Omit ASCII banner"),
+    ] = False,
+) -> None:
+    """
+    🚀 Integrate TimmyTest into any project: auto-generate AI agent rules, configs, and MCP tools.
+    """
+    _require("cli.integrate")
+    if not no_banner:
+        print_banner()
+
+    result = integrate_project(
+        project_dir=path,
+        include_cursor=cursor,
+        include_claude=claude,
+        include_copilot=copilot,
+        include_agents=agents,
+        include_config=config,
+        include_ci=ci,
+        include_mcp=mcp,
+        force=force,
+        dry_run=dry_run,
+    )
+
+    root = path.resolve()
+    prefix = "[bold yellow][DRY RUN][/bold yellow] " if dry_run else ""
+
+    console.print(
+        f"\n{prefix}[bold green]⚡ TimmyTest Integration Summary[/bold green] "
+        f"({result.ecosystem.value.title()} / {result.framework.value}):\n"
+    )
+
+    if result.created_files:
+        console.print("[bold green]Created Files:[/bold green]")
+        for f in result.created_files:
+            rel = f.relative_to(root) if f.is_relative_to(root) else f
+            console.print(f"  [green]+ {rel}[/green]")
+
+    if result.modified_files:
+        console.print("[bold cyan]Updated / Appended Files:[/bold cyan]")
+        for f in result.modified_files:
+            rel = f.relative_to(root) if f.is_relative_to(root) else f
+            console.print(f"  [cyan]~ {rel}[/cyan]")
+
+    if result.skipped_files:
+        console.print("[bold dim]Already Configured / Skipped:[/bold dim]")
+        for f in result.skipped_files:
+            rel = f.relative_to(root) if f.is_relative_to(root) else f
+            console.print(f"  [dim]• {rel}[/dim]")
+
+    console.print("\n[bold cyan]🤖 AI agents in this repo are now pre-configured to test with zero token waste![/bold cyan]")
+    console.print("[dim]Try running: 'timmytest check' or 'timmytest mcp'[/dim]\n")
+
+
+@app.command(name="agent")
+def agent_command(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Target project directory path", exists=True, file_okay=False, dir_okay=True),
+    ] = Path("."),
+    timeout: Annotated[
+        int,
+        typer.Option("--timeout", "-t", help="Test execution timeout in seconds"),
+    ] = 60,
+    filter_pattern: Annotated[
+        str | None,
+        typer.Option("--filter", "-k", help="Filter tests by name pattern"),
+    ] = None,
+    cmd: Annotated[
+        str | None,
+        typer.Option("--cmd", help="Custom test command to execute"),
+    ] = None,
+    no_run: Annotated[
+        bool,
+        typer.Option("--no-run", help="Skip test execution (static scan only)"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", "-j", help="Output in machine JSON format"),
+    ] = False,
+    no_banner: Annotated[
+        bool,
+        typer.Option("--no-banner", help="Omit ASCII banner (kept for CLI consistency)"),
+    ] = False,
+) -> None:
+    """
+    🤖 Direct zero-noise output optimized for AI coding agents (Claude, Cursor, Antigravity).
+    """
+    _require("cli.agent")
+    audit = _analyze_project(
+        project_dir=path,
+        custom_cmd=cmd,
+        execute_tests=not no_run,
+        timeout_seconds=timeout,
+        filter_pattern=filter_pattern,
+    )
+    if json_output:
+        typer.echo(export_audit_to_json(audit))
+    else:
+        typer.echo(audit.agent_prompt)
+
+
+@app.command(name="ui")
+@app.command(name="app")
+def ui_command(
+    path: Annotated[
+        Path | None,
+        typer.Argument(help="Optional project directory to pre-select when creating a workspace"),
+    ] = None,
+    fresh: Annotated[
+        bool,
+        typer.Option("--fresh", help="Replay the full onboarding (setup, language, workspace)"),
+    ] = False,
+) -> None:
+    """
+    🎮 Launch the full-screen TimmyTest application (splash, setup, workspaces, dashboard).
+    """
+    _require("cli.ui")
+    from timmytest.tui.app import launch
+
+    launch(fresh=fresh, start_path=path.resolve() if path else None)
+
+
+@app.command(name="mcp")
+def mcp_command() -> None:
+    """
+    ⚡ Start the Model Context Protocol (MCP) server for native tool integration with AI agents.
+    """
+    _require("cli.mcp")
+    run_mcp_server()
+
+
 @app.command(name="version")
-def version_command() -> None:
+def version_command(
+    no_banner: Annotated[
+        bool,
+        typer.Option("--no-banner", help="Omit ASCII banner (kept for CLI consistency)"),
+    ] = False,
+) -> None:
     """
     Show TimmyTest version.
     """
@@ -460,3 +717,4 @@ def version_command() -> None:
 
 if __name__ == "__main__":
     app()
+

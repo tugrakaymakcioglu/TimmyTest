@@ -49,6 +49,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# TimmyTestDev — the maintainer's admin panel — lives outside this repository and
+# is never committed. Should a copy ever land here, keep it out.
+TimmyTestDev/
+
 # IDE & OS
 .idea/
 .vscode/

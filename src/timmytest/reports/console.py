@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
-from timmytest.detector.models import Priority, ProjectInfo, TestRunResult
+from timmytest.detector.models import CoverageReport, Priority, ProjectInfo, TestRunResult
 
 if hasattr(sys.stdout, "reconfigure"):
     with contextlib.suppress(Exception):
@@ -107,6 +107,36 @@ def print_failures(test_run: TestRunResult) -> None:
             )
         )
     console.print("")
+
+
+def print_coverage_summary(coverage: CoverageReport) -> None:
+    """Print a coverage report summary with the worst-covered files."""
+    score_color = "green" if coverage.total_percent >= 80 else ("yellow" if coverage.total_percent >= 50 else "red")
+
+    table = Table(
+        title=f"🧪 Test Coverage ({coverage.source})",
+        show_header=True,
+        header_style="bold cyan",
+        expand=False,
+    )
+    table.add_column("Metric", style="bold white", width=20)
+    table.add_column("Value", style="white")
+    table.add_row("Overall Line Coverage", f"[{score_color}]{coverage.total_percent}%[/{score_color}]")
+    table.add_row("Files Tracked", str(len(coverage.files)))
+    console.print(table)
+    console.print("")
+
+    # Show the lowest-covered files to focus remediation.
+    worst = sorted(coverage.files, key=lambda f: f.percent)[:10]
+    if worst:
+        wt = Table(title="📉 Lowest-Covered Files", show_header=True, header_style="bold red", expand=False)
+        wt.add_column("File", style="cyan", width=45)
+        wt.add_column("Coverage", style="bold white", width=12)
+        for f in worst:
+            c = "red" if f.percent < 50 else "yellow"
+            wt.add_row(f.path, f"[{c}]{f.percent}%[/{c}]")
+        console.print(wt)
+        console.print("")
 
 
 def print_test_gaps(project: ProjectInfo) -> None:

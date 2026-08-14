@@ -11,9 +11,36 @@ class Ecosystem(StrEnum):
     RUST = "rust"
     GO = "go"
     JAVA = "java"
+    KOTLIN = "kotlin"
+    SCALA = "scala"
     DOTNET = "dotnet"
     PHP = "php"
     RUBY = "ruby"
+    SWIFT = "swift"
+    DART = "dart"
+    ELIXIR = "elixir"
+    HASKELL = "haskell"
+    C = "c"
+    CPP = "cpp"
+    LUA = "lua"
+    PERL = "perl"
+    ZIG = "zig"
+    CRYSTAL = "crystal"
+    CLOJURE = "clojure"
+    SOLIDITY = "solidity"
+    SHELL = "shell"
+    SQL = "sql"
+    TERRAFORM = "terraform"
+    POWERSHELL = "powershell"
+    R = "r"
+    JULIA = "julia"
+    GROOVY = "groovy"
+    ERLANG = "erlang"
+    NIM = "nim"
+    OCAML = "ocaml"
+    ELM = "elm"
+    D = "d"
+    V = "v"
     GENERIC = "generic"
     UNKNOWN = "unknown"
 
@@ -22,6 +49,7 @@ class TestFramework(StrEnum):
     __test__ = False
     PYTEST = "pytest"
     UNITTEST = "unittest"
+    DENO = "deno"
     VITEST = "vitest"
     JEST = "jest"
     MOCHA = "mocha"
@@ -31,9 +59,38 @@ class TestFramework(StrEnum):
     GO_TEST = "go_test"
     MAVEN = "maven"
     GRADLE = "gradle"
+    KOTLIN_TEST = "kotlin_test"
+    SCALATEST = "scalatest"
     DOTNET_TEST = "dotnet_test"
     PHPUNIT = "phpunit"
     RSPEC = "rspec"
+    MINITEST = "minitest"
+    XCTEST = "xctest"
+    DART_TEST = "dart_test"
+    EXUNIT = "exunit"
+    HSPEC = "hspec"
+    CTEST = "ctest"
+    GTEST = "gtest"
+    BUSTED = "busted"
+    PROVE = "prove"
+    ZIG_TEST = "zig_test"
+    CRYSTAL_SPEC = "crystal_spec"
+    CLOJURE_TEST = "clojure_test"
+    FOUNDRY = "foundry"
+    HARDHAT = "hardhat"
+    BATS = "bats"
+    DBT = "dbt"
+    TERRAFORM_TEST = "terraform_test"
+    PESTER = "pester"
+    TESTTHAT = "testthat"
+    JULIA_TEST = "julia_test"
+    SPOCK = "spock"
+    EUNIT = "eunit"
+    NIM_TEST = "nim_test"
+    DUNE_TEST = "dune_test"
+    ELM_TEST = "elm_test"
+    DUB_TEST = "dub_test"
+    V_TEST = "v_test"
     CUSTOM = "custom"
     UNKNOWN = "unknown"
 
@@ -137,6 +194,21 @@ class TestRunResult(BaseModel):
     has_executed: bool = False
 
 
+class FileCoverage(BaseModel):
+    """Per-file line coverage percentage."""
+
+    path: str
+    percent: float  # 0.0 - 100.0
+
+
+class CoverageReport(BaseModel):
+    """Parsed coverage data from coverage.py / cobertura / lcov."""
+
+    source: str  # e.g. "coverage.json", "cobertura.xml", "lcov.info"
+    total_percent: float
+    files: list[FileCoverage] = Field(default_factory=list)
+
+
 class ProjectInfo(BaseModel):
     """Metadata about the detected project."""
 
@@ -152,6 +224,7 @@ class ProjectInfo(BaseModel):
     total_source_files: int = 0
     total_test_files: int = 0
     readiness_score: float = 0.0  # 0 to 100%
+    coverage: CoverageReport | None = None
 
 
 class ProjectAudit(BaseModel):

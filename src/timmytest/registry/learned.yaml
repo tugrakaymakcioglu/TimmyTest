@@ -1,0 +1,22 @@
+# Machine-generated. Do not edit by hand - this file is rebuilt from scratch on
+# every regeneration and any manual change is lost.
+#
+# These are detection rules mined from real open-source repositories: file
+# patterns, directories, config files and extensions that TimmyTest learned are
+# in common use. The file is merged on top of the hand-curated ecosystems.yaml
+# at load time and can only *widen* detection. It never rewrites a test command,
+# and a learned ecosystem is always appended after the curated ones, so it can
+# only catch projects the curated registry did not already claim.
+#
+# To change detection, edit ecosystems.yaml - it wins on everything this overlay
+# is not allowed to touch. Deleting this file returns detection to the curated
+# registry exactly.
+
+version: 1
+generation: 1
+generated_at: '2026-08-14T16:45:15+00:00'
+rule_count: 1
+ecosystems:
+- id: go
+  config_files:
+  - go.sum

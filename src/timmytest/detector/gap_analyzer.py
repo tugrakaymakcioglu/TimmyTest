@@ -5,6 +5,41 @@ from pathlib import Path
 from timmytest.detector.models import Ecosystem, Priority, SourceModule, TestGap, TestModule
 
 
+def _import_targets_module(imp: str, source: SourceModule) -> bool:
+    """Does an import statement plausibly refer to *this* source file?
+
+    Matching on the module name alone is far too loose: a single
+    ``from myapp.utils import x`` would then mark ``billing/utils.py``,
+    ``auth/utils.py`` and every other ``utils.py`` in the repository as tested.
+    The import's dotted path is compared against the source file's own directory
+    chain, so the match has to agree on *where* the module lives, not just what
+    it is called.
+    """
+    src_path = Path(source.rel_path)
+    module_name = src_path.stem
+    normalised = imp.replace("/", ".").replace("\\", ".").lstrip(".")
+    parts = [p for p in normalised.split(".") if p]
+    if module_name not in parts:
+        return False
+    # `from pkg.mod import thing` — everything after the module name is a symbol.
+    prefix = [p.lower() for p in parts[: parts.index(module_name)]]
+
+    # Import paths are written relative to the import root, so a leading src/,
+    # lib/ or app/ in the file path has no counterpart in the import statement.
+    src_dirs = [p.lower() for p in src_path.parts[:-1]]
+    while src_dirs and src_dirs[0] in {"src", "lib", "app"}:
+        src_dirs.pop(0)
+
+    if not prefix:
+        # A bare `import utils` only names a module at the import root.
+        return not src_dirs
+
+    for start in range(len(src_dirs) - len(prefix) + 1):
+        if src_dirs[start : start + len(prefix)] == prefix:
+            return True
+    return False
+
+
 def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) -> TestModule | None:
     """
     Find if a source module has a corresponding test file using exact naming,
@@ -12,7 +47,6 @@ def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) ->
     """
     src_path = Path(source.rel_path)
     src_stem = src_path.stem.lower()
-    src_module_name = src_path.stem
 
     for test in test_modules:
         test_path = Path(test.rel_path)
@@ -24,6 +58,15 @@ def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) ->
             .removesuffix(".spec")
             .removesuffix("_spec")
         )
+
+        # A file picked up only because it sits inside a test directory, whose
+        # name carries no test marker and which declares no test functions, is a
+        # fixture or helper. `tests/helpers.py` must not be accepted as the test
+        # suite for `src/helpers.py`. The name check keeps this safe for the
+        # languages whose test functions the scanner cannot parse.
+        named_like_test = "test" in test_stem or "spec" in test_stem
+        if not test.test_functions and not named_like_test:
+            continue
 
         # 1. Exact stem match: e.g. test_auth.py or auth_test.py or auth.test.ts matches auth.py
         if (
@@ -44,11 +87,9 @@ def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) ->
             if src_parent_names.intersection(test_parent_names) - {"src", "lib", "app"}:
                 return test
 
-        # 3. Import verification: check if test imports the source module
-        for imp in test.imported_modules:
-            imp_parts = imp.split(".")
-            if src_module_name in imp_parts or imp.endswith(f"/{src_module_name}") or imp.endswith(f"\\{src_module_name}"):
-                return test
+        # 3. Import verification: check if test imports this exact module
+        if any(_import_targets_module(imp, source) for imp in test.imported_modules):
+            return test
 
     return None
 

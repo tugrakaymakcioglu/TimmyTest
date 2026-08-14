@@ -13,7 +13,15 @@ runner = CliRunner()
 def test_cli_version():
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "1.1.1" in result.output
+    assert "1.2.0" in result.output
+
+
+def test_cli_default_invocation():
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "Tuğra KAYMAKÇIOĞLU" in result.output
+    assert "Commands:" in result.output
+
 
 
 def test_cli_scan(temp_project_dir: Path):

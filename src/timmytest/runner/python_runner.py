@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner, execute_safe_subprocess
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess, split_command
 
 
 class PythonRunner(BaseRunner):
@@ -62,13 +62,23 @@ class PythonRunner(BaseRunner):
         custom_cmd: str | None = None,
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
+        test_paths: list[str] | None = None,
     ) -> TestRunResult:
         cmd_target: list[str] | str
         if custom_cmd:
-            cmd_target = custom_cmd
-            display_cmd = custom_cmd
+            if test_paths:
+                # Append targeted test files to an explicit command (e.g. "pytest -ra").
+                parts = split_command(custom_cmd)
+                parts.extend(test_paths)
+                cmd_target = parts
+                display_cmd = " ".join(parts)
+            else:
+                cmd_target = custom_cmd
+                display_cmd = custom_cmd
         else:
             cmd_args = self._find_runner_args(root_dir, filter_pattern)
+            if test_paths:
+                cmd_args.extend(test_paths)
             cmd_target = cmd_args
             display_cmd = " ".join(cmd_args)
 

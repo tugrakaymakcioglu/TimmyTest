@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner, execute_safe_subprocess
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess, split_command
 
 
 class GenericRunner(BaseRunner):
@@ -19,14 +19,23 @@ class GenericRunner(BaseRunner):
         custom_cmd: str | None = None,
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
+        test_paths: list[str] | None = None,
+        *,
         ecosystem: Ecosystem = Ecosystem.GENERIC,
         framework: TestFramework = TestFramework.CUSTOM,
     ) -> TestRunResult:
-        cmd = custom_cmd or "pytest"
+        base_cmd = custom_cmd or "pytest"
+        # Targeted paths are appended as argv entries rather than concatenated
+        # into the string: a test path containing a space would otherwise be
+        # re-split into two bogus arguments.
+        argv = split_command(base_cmd)
+        if test_paths:
+            argv.extend(test_paths)
+        cmd = " ".join(argv)
         start_time = time.time()
 
         exit_code, raw_output, is_timeout = execute_safe_subprocess(
-            cmd,
+            argv,
             cwd=root_dir,
             timeout_seconds=timeout_seconds,
         )
@@ -64,13 +73,15 @@ class GenericRunner(BaseRunner):
                 )
             )
 
+        # The generic runner cannot reliably parse Maven/Gradle/.NET/PHP/Ruby
+        # output, so report counts honestly rather than fabricating "1 passed".
         return TestRunResult(
             ecosystem=ecosystem,
             framework=framework,
             command=cmd,
-            total=1 if exit_code == 0 else 1,
-            passed=1 if exit_code == 0 else 0,
-            failed=0 if exit_code == 0 else 1,
+            total=0,
+            passed=0,
+            failed=1 if exit_code != 0 else 0,
             duration_seconds=duration,
             exit_code=exit_code,
             failures=failures,

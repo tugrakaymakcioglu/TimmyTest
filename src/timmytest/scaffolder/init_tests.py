@@ -87,7 +87,12 @@ def initialize_test_scaffold(project: ProjectInfo, root_dir: Path) -> list[str]:
         tests_dir = root / "tests"
         tests_dir.mkdir(parents=True, exist_ok=True)
 
-        is_ts = any(root.glob("**/*.ts")) or (root / "tsconfig.json").exists()
+        # `root.glob("**/*.ts")` walks node_modules — hundreds of thousands of
+        # files on a real project, and all of it wasted when the answer is no.
+        # The project's own sources decide the language.
+        is_ts = (root / "tsconfig.json").exists() or any(
+            any((root / directory).glob("**/*.ts")) for directory in ("src", "lib", "app")
+        )
         ext = "ts" if is_ts else "js"
         runner_pkg = "vitest" if project.test_framework.value == "vitest" else "jest"
 

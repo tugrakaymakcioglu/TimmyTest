@@ -1,9 +1,11 @@
 """Base test runner abstraction and safe subprocess execution utilities."""
 
+import contextlib
 import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -16,6 +18,53 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 def strip_ansi(text: str) -> str:
     """Removes terminal ANSI color and styling escape codes."""
     return ANSI_ESCAPE_RE.sub("", text)
+
+
+def _terminate_process_tree(proc: subprocess.Popen) -> None:
+    """Best-effort termination of a process and all of its children.
+
+    ``proc.kill()`` alone only signals the direct child, leaving grandchildren
+    orphaned (e.g. a test that spawns a server). On Windows we use
+    ``taskkill /T`` to walk the tree; on POSIX we run the child in its own
+    process group and ``killpg`` it.
+    """
+    with contextlib.suppress(Exception):
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            killpg = getattr(os, "killpg", None)
+            getpgid = getattr(os, "getpgid", None)
+            if killpg is not None and getpgid is not None:
+                killpg(getpgid(proc.pid), getattr(signal, "SIGKILL", signal.SIGTERM))
+    with contextlib.suppress(Exception):
+        proc.kill()
+
+
+def split_command(command: str) -> list[str]:
+    """Split a command string into argv, correctly on both platforms.
+
+    ``shlex.split(posix=True)`` treats a backslash as an escape character, so on
+    Windows it silently eats path separators - ``C:\\tools\\pytest.exe -ra`` comes
+    out as ``C:toolspytest.exe``. Windows therefore gets the non-POSIX split
+    (which preserves backslashes) with the surrounding quotes stripped off each
+    token, since those quotes are shell syntax and must not reach the program.
+    """
+    try:
+        if os.name == "nt":
+            parts = shlex.split(command, posix=False)
+            return [
+                part[1:-1] if len(part) >= 2 and part[0] == part[-1] and part[0] in "\"'" else part
+                for part in parts
+            ]
+        return shlex.split(command, posix=True)
+    except ValueError:
+        # Unbalanced quotes: a naive split beats refusing to run at all.
+        return command.split()
 
 
 def execute_safe_subprocess(
@@ -31,14 +80,7 @@ def execute_safe_subprocess(
     Returns:
         (exit_code, raw_output, is_timeout)
     """
-    if isinstance(cmd_args, str):
-        # Safely split command string into arguments
-        try:
-            args = shlex.split(cmd_args, posix=True)
-        except Exception:
-            args = cmd_args.split()
-    else:
-        args = list(cmd_args)
+    args = split_command(cmd_args) if isinstance(cmd_args, str) else list(cmd_args)
 
     if not args:
         return 1, "Empty command supplied", False
@@ -68,6 +110,7 @@ def execute_safe_subprocess(
             encoding="utf-8",
             errors="replace",
             env=run_env,
+            start_new_session=(os.name != "nt"),
         )
 
         try:
@@ -76,7 +119,7 @@ def execute_safe_subprocess(
             exit_code = proc.returncode
         except subprocess.TimeoutExpired:
             is_timeout = True
-            proc.kill()
+            _terminate_process_tree(proc)
             try:
                 stdout, stderr = proc.communicate(timeout=2)
                 raw_output = (stdout or "") + ("\n" + stderr if stderr else "")
@@ -105,6 +148,7 @@ class BaseRunner(ABC):
         custom_cmd: str | None = None,
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
+        test_paths: list[str] | None = None,
     ) -> TestRunResult:
         """Run the test suite and return structured results."""
         pass

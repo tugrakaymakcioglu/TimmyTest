@@ -6,17 +6,17 @@
 
 ### Zero-Token Test Runner • AST Test Gap Detector • AI Agent Prompt Generator
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v1.1.1-blue.svg?logo=pypi&logoColor=white)](https://pypi.org/project/timmytest/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v1.2.0-blue.svg?logo=pypi&logoColor=white)](https://pypi.org/project/timmytest/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![CI Tests](https://img.shields.io/badge/tests-43%20passing-brightgreen.svg?logo=pytest&logoColor=white)](tests/)
-[![Ruff Code Style](https://img.shields.io/badge/code%20style-ruff-black.svg?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
-[![AI Agent Ready](https://img.shields.io/badge/AI%20Agent-Claude%20%7C%20Codex%20%7C%20Cursor%20%7C%20Antigravity-orange.svg?logo=openai&logoColor=white)](#-why-timmytest-the-token-drain-problem)
+[![CI Tests](https://img.shields.io/badge/tests-59%20passing-brightgreen.svg?logo=pytest&logoColor=white)](tests/)
+[![MCP Server](https://img.shields.io/badge/MCP-Protocol%20Ready-purple.svg?logo=json&logoColor=white)](#-model-context-protocol-mcp-server)
+[![AI Agent Ready](https://img.shields.io/badge/AI%20Agent-Claude%20%7C%20Cursor%20%7C%20Copilot%20%7C%20Antigravity-orange.svg?logo=openai&logoColor=white)](#-why-timmytest-the-token-drain-problem)
 
 **Stop burning tens of thousands of LLM tokens on test exploration.**  
 TimmyTest analyzes any codebase, executes tests locally with 0 AI tokens, detects missing test modules, isolates failure root causes with actionable suggestions, and produces an ultra-dense, copy-pasteable handoff prompt for AI coding agents.
 
-[Türkçe Dokümantasyon](README.tr.md) &nbsp;·&nbsp; [Quick Start](#-quick-start) • [Installation](#-installation) • [Core Features](#-features) • [Ecosystems](#-supported-ecosystems) • [Command Reference](#-command-reference) • [Token Savings](#-why-timmytest-the-token-drain-problem)
+[Türkçe Dokümantasyon](README.tr.md) &nbsp;·&nbsp; [Quick Start](#-quick-start) • [1-Command Setup](#-1-command-instant-repo-integration) • [MCP Server](#-model-context-protocol-mcp-server) • [Installation](#-installation) • [Token Savings](#-why-timmytest-the-token-drain-problem)
 
 ---
 
@@ -42,6 +42,27 @@ When AI coding agents (Claude Code, OpenAI Codex, Antigravity, Cursor, Copilot, 
 
 ---
 
+## ⚡ 1-Command Instant Repo Integration
+
+Setup TimmyTest in any repository in 3 seconds so that AI coding agents (Cursor, Claude Code, Copilot, Antigravity) automatically follow zero-token testing practices:
+
+```bash
+# In your project root:
+timmytest integrate
+# or zero-install with uvx:
+uvx timmytest integrate
+```
+
+**What this automatically configures:**
+- `.cursorrules` & `.cursor/rules/timmytest.mdc` (Cursor IDE rules)
+- `CLAUDE.md` (Claude Code CLI instructions)
+- `.github/copilot-instructions.md` (GitHub Copilot policy)
+- `AGENTS.md` (Universal rules for Antigravity, Devin, Codex, Aider)
+- `.timmytest.yml` (Project test settings and ignore paths)
+- `.cursor/mcp.json` (Native MCP Server integration)
+
+---
+
 ## 🚀 Installation
 
 ### Using `uv` (Recommended - Ultra Fast)
@@ -56,33 +77,62 @@ pipx install timmytest
 pip install timmytest
 ```
 
+### Zero-Install (Run directly)
+```bash
+uvx timmytest check
+# or
+pipx run timmytest check
+```
+
 ---
 
 ## ⚡ Quick Start
 
-### 1. Complete Project Audit (Scan + Run + Gap Analysis + AI Prompt)
+### 0. The Full-Screen App
+Run TimmyTest with no arguments and it opens as a keyboard-driven terminal application:
+```bash
+timmytest
+```
+Pixel-art splash → system requirement & file integrity checks → language selection (Türkçe / English)
+→ workspace creation (project name, AI vendors, drag & drop project folder) → a live dashboard with
+pass / fail / missing charts, agent-prompt tooling, Discord reporting and a **RUN** button that
+re-analyses the workspace on demand.
+
+```bash
+timmytest ui --fresh
+```
+`ui` launches the same app explicitly; `--fresh` replays the whole onboarding. Piped or non-interactive
+invocations keep the classic command list (also available via `timmytest --classic`).
+
+### 1. 1-Command AI Setup
+Configure all AI agent rule files in your repo:
+```bash
+timmytest integrate
+```
+
+### 2. Complete Project Audit (Scan + Run + Gap Analysis + AI Prompt)
 Run a full audit on your current directory or any project path:
 ```bash
 timmytest check .
 ```
 > 💡 *Automatically copies the dense AI prompt directly to your clipboard!*
 
-### 2. Fast Static Gap Scan (No Test Execution)
+### 3. Native AI Agent Output (Zero noise)
+Direct token-dense markdown stream for AI agents:
+```bash
+timmytest agent .
+```
+
+### 4. Fast Static Gap Scan (No Test Execution)
 Discover all source modules, existing test files, and missing test modules:
 ```bash
 timmytest scan /path/to/project
 ```
 
-### 3. Diagnose & Fix Suggestions
+### 5. Diagnose & Fix Suggestions
 Run test suite and display rich failure analysis with suggestions:
 ```bash
 timmytest run --only-failures
-```
-
-### 4. Generate AI Agent Handoff Prompt
-Output the optimized prompt for Claude Code, Cursor, Codex, or Antigravity:
-```bash
-timmytest prompt --copy
 ```
 
 ---
@@ -129,6 +179,54 @@ timmytest prompt --copy
 
 ## 📖 Command Reference
 
+### `timmytest ui` (or `timmytest app`, or just `timmytest`)
+Launches the full-screen application: splash, setup checks, language selection, workspace wizard and dashboard.
+
+```bash
+timmytest ui [PROJECT_DIR] [OPTIONS]
+
+Options:
+  --fresh    Replay the full onboarding (setup, language, workspace creation)
+```
+
+Dashboard keys: `↑ ↓` navigate the feature sidebar · `Enter` open a panel · `Tab` switch pane ·
+`R` / `F5` run the analysis · `Q` quit. Language, workspaces, run history and the Discord webhook are
+stored in `~/.timmytest/state.json` (override the location with the `TIMMYTEST_HOME` environment variable).
+
+### `timmytest integrate` (or `timmytest setup`)
+Automatically injects zero-token AI agent instruction files (`.cursorrules`, `CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`), `.timmytest.yml`, and MCP configuration into the target repository.
+
+```bash
+timmytest integrate [PROJECT_DIR] [OPTIONS]
+
+Options:
+  --cursor / --no-cursor    Generate Cursor AI rules (.cursorrules, .cursor/rules/) [default: True]
+  --claude / --no-claude    Generate Claude Code instructions (CLAUDE.md) [default: True]
+  --copilot / --no-copilot  Generate GitHub Copilot rules (.github/copilot-instructions.md) [default: True]
+  --agents / --no-agents    Generate Universal Agent guide (AGENTS.md) [default: True]
+  --config / --no-config    Generate TimmyTest config (.timmytest.yml) [default: True]
+  --mcp / --no-mcp          Generate MCP tool snippet (.cursor/mcp.json) [default: True]
+  --ci / --no-ci            Generate GitHub Actions CI workflow [default: False]
+  -f, --force               Overwrite existing files instead of appending
+  --dry-run                 Preview generated files without writing
+```
+
+### `timmytest agent`
+Outputs an ultra-dense, machine-optimized Markdown or JSON stream directly to stdout for AI coding agents without banners or terminal colors.
+
+```bash
+timmytest agent .
+timmytest agent . --json
+timmytest agent . --no-run
+```
+
+### `timmytest mcp`
+Launches the Model Context Protocol (MCP) stdio server, allowing AI agents to call TimmyTest natively as tools.
+
+```bash
+timmytest mcp
+```
+
 ### `timmytest check`
 Performs a comprehensive audit: discovers ecosystem, runs tests, detects gaps, categorizes failures, and generates the AI prompt.
 
@@ -169,6 +267,33 @@ timmytest prompt . --raw --no-copy > agent-prompt.md
 Initializes starter test scaffolding (`tests/` directory, configuration, and sanity tests) if the project lacks test files.
 ```bash
 timmytest init .
+```
+
+---
+
+## 🔌 Model Context Protocol (MCP) Server
+
+TimmyTest includes a native **MCP Server** out of the box. Any MCP-compatible AI agent (Claude Desktop, Cursor, Claude Code, Antigravity, Windsurf, Zed) can invoke TimmyTest tools directly:
+
+| Tool Name | Description |
+| :--- | :--- |
+| `timmytest_check` | Full zero-token test audit, gap analysis, and diagnostic AI prompt. |
+| `timmytest_scan` | Fast static AST scan identifying untested functions, classes, and missing test files. |
+| `timmytest_run` | Execute tests and return isolated failure diagnostics with fix suggestions. |
+| `timmytest_prompt` | Generate dense, token-optimized instructions for fixing bugs or writing missing tests. |
+| `timmytest_integrate`| Automatically install AI agent rules and configurations into the project. |
+
+### How to configure in Cursor / Claude Desktop
+Add to `.cursor/mcp.json` or `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "timmytest": {
+      "command": "timmytest",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
 ---

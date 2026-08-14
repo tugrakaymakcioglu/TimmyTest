@@ -20,15 +20,27 @@ class RustRunner(BaseRunner):
         custom_cmd: str | None = None,
         timeout_seconds: int = 120,
         filter_pattern: str | None = None,
+        test_paths: list[str] | None = None,
     ) -> TestRunResult:
         cmd_target: list[str] | str
         if custom_cmd:
-            cmd_target = custom_cmd
-            display_cmd = custom_cmd
+            if test_paths:
+                import shlex
+
+                parts = shlex.split(custom_cmd)
+                parts.append(Path(test_paths[0]).stem)
+                cmd_target = parts
+                display_cmd = " ".join(parts)
+            else:
+                cmd_target = custom_cmd
+                display_cmd = custom_cmd
         else:
             args = ["cargo", "test"]
             if filter_pattern:
                 args.append(filter_pattern)
+            elif test_paths:
+                # cargo test accepts a substring filter; use the first test file's stem.
+                args.append(Path(test_paths[0]).stem)
             cmd_target = args
             display_cmd = " ".join(args)
 

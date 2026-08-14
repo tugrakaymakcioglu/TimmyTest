@@ -4,13 +4,21 @@ import platform
 import shutil
 import subprocess
 
+from timmytest import flags
+
 
 def copy_to_clipboard(text: str) -> bool:
     """
     Copies text to the system clipboard across Windows, macOS, and Linux
     without raising exceptions and without using shell=True.
     Returns True on success, False on failure.
+
+    Returns False without touching the clipboard when the ``core.clipboard``
+    switch is off - some teams forbid tools writing to a shared clipboard.
     """
+    if not flags.is_enabled("core.clipboard"):
+        return False
+
     os_name = platform.system()
 
     try:

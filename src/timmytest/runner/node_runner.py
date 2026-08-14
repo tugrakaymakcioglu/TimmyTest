@@ -53,9 +53,20 @@ class NodeRunner(BaseRunner):
         custom_cmd: str | None = None,
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
+        test_paths: list[str] | None = None,
     ) -> TestRunResult:
         cmd_args = self._determine_node_cmd(root_dir, custom_cmd, filter_pattern)
         display_cmd = custom_cmd if custom_cmd else " ".join(cmd_args)
+
+        # Append targeted test file paths for incremental runs.
+        if test_paths:
+            if custom_cmd:
+                import shlex
+
+                cmd_args = shlex.split(custom_cmd) + ["--", *test_paths]
+            else:
+                cmd_args.extend(["--", *test_paths])
+            display_cmd = " ".join(cmd_args)
 
         start_time = time.time()
         exit_code, raw_output, is_timeout = execute_safe_subprocess(
@@ -136,10 +147,27 @@ class NodeRunner(BaseRunner):
             if s_m:
                 skipped = int(s_m.group(1) or s_m.group(2))
 
-        # Check for FAIL / ✕ blocks
+        # Node's built-in test runner (node --test / TAP output):
+        #   # tests 2  # pass 2  # fail 0  # skipped 0  # todo 0
+        if passed == 0 and failed == 0:
+            p_m = re.search(r"#\s*pass\s+(\d+)", output)
+            f_m = re.search(r"#\s*fail\s+(\d+)", output)
+            s_m = re.search(r"#\s*skipped\s+(\d+)", output)
+            t_m = re.search(r"#\s*todo\s+(\d+)", output)
+            if p_m or f_m:
+                passed = int(p_m.group(1)) if p_m else 0
+                failed = int(f_m.group(1)) if f_m else 0
+                skipped = int(s_m.group(1)) if s_m else 0
+                skipped += int(t_m.group(1)) if t_m else 0
+
+        # Check for FAIL / ✕ blocks (Jest/Vitest).
         fail_files = re.findall(r"FAIL\s+([^\n]+)", output)
         if not fail_files:
             fail_files = re.findall(r"✕\s+([^\n]+)", output)
+
+        # TAP failures: "not ok N - test name"
+        if not fail_files:
+            fail_files = re.findall(r"not ok\s+\d+\s*-\s*([^\n]+)", output)
 
         for f_name in fail_files:
             failures.append(
@@ -148,7 +176,7 @@ class NodeRunner(BaseRunner):
                     error_type="NodeTestFailure",
                     message="Test suite or case failed",
                     traceback="",
-                    suggested_fix="Check Jest/Vitest assertion errors and mock implementations.",
+                    suggested_fix="Check Jest/Vitest/node:test assertion errors and mock implementations.",
                 )
             )
 
