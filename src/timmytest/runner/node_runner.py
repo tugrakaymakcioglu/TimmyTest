@@ -1,19 +1,51 @@
-"""Node / JavaScript / TypeScript test runner supporting Vitest, Jest, Mocha, and npm."""
+"""Node / JavaScript / TypeScript test runner supporting Vitest, Jest, Mocha, pnpm, yarn, bun, and npm."""
 
 import re
-import subprocess
 import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess
 
 
 class NodeRunner(BaseRunner):
-    """Executes Node/JS/TS tests using npm, vitest, jest, etc."""
+    """Executes Node/JS/TS tests using pnpm, yarn, bun, npm, vitest, jest with zero shell injection."""
 
     def can_handle(self, root_dir: Path) -> bool:
-        return (root_dir / "package.json").exists()
+        return (
+            (root_dir / "package.json").exists()
+            or (root_dir / "deno.json").exists()
+            or (root_dir / "deno.jsonc").exists()
+        )
+
+    def _determine_node_cmd(
+        self,
+        root_dir: Path,
+        custom_cmd: str | None = None,
+        filter_pattern: str | None = None,
+    ) -> list[str]:
+        if custom_cmd:
+            return [custom_cmd]  # Will be parsed safely by execute_safe_subprocess
+
+        # Detect package runner
+        if (root_dir / "deno.json").exists() or (root_dir / "deno.jsonc").exists():
+            args = ["deno", "test"]
+            if filter_pattern:
+                args.extend(["--filter", filter_pattern])
+            return args
+
+        runner = "npm"
+        if (root_dir / "pnpm-lock.yaml").exists():
+            runner = "pnpm"
+        elif (root_dir / "yarn.lock").exists():
+            runner = "yarn"
+        elif (root_dir / "bun.lockb").exists() or (root_dir / "bun.lock").exists():
+            runner = "bun"
+
+        args = [runner, "test"]
+        if filter_pattern:
+            args.extend(["--", "-t", filter_pattern])
+        return args
 
     def run_tests(
         self,
@@ -22,30 +54,22 @@ class NodeRunner(BaseRunner):
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
     ) -> TestRunResult:
-        cmd = custom_cmd or "npm test"
-        if filter_pattern and not custom_cmd:
-            cmd = f'npm test -- -t "{filter_pattern}"'
+        cmd_args = self._determine_node_cmd(root_dir, custom_cmd, filter_pattern)
+        display_cmd = custom_cmd if custom_cmd else " ".join(cmd_args)
 
         start_time = time.time()
-        raw_output = ""
-        exit_code = 0
+        exit_code, raw_output, is_timeout = execute_safe_subprocess(
+            custom_cmd or cmd_args,
+            cwd=root_dir,
+            timeout_seconds=timeout_seconds,
+        )
+        duration = round(time.time() - start_time, 2)
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(root_dir),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
-            raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
+        if is_timeout:
             return TestRunResult(
                 ecosystem=Ecosystem.NODE,
                 framework=TestFramework.JEST,
-                command=cmd,
+                command=display_cmd,
                 total=0,
                 failed=1,
                 exit_code=124,
@@ -60,11 +84,7 @@ class NodeRunner(BaseRunner):
                     )
                 ],
             )
-        except Exception as e:
-            raw_output = f"Execution error: {e}"
-            exit_code = 1
 
-        duration = round(time.time() - start_time, 2)
         passed, failed, skipped, failures = self._parse_node_output(raw_output)
 
         total = passed + failed + skipped
@@ -74,16 +94,16 @@ class NodeRunner(BaseRunner):
                 FailureDetail(
                     test_name="Node Test Execution Failed",
                     error_type="ExecutionError",
-                    message="Failed to run tests via npm/npx. See raw output.",
+                    message="Failed to run tests via package manager. See raw output.",
                     traceback=raw_output[:1000],
-                    suggested_fix="Run 'npm install' or check package.json 'scripts.test'.",
+                    suggested_fix="Run 'npm install' (or pnpm/yarn/bun) and check package.json 'scripts.test'.",
                 )
             )
 
         return TestRunResult(
             ecosystem=Ecosystem.NODE,
-            framework=TestFramework.VITEST if "vitest" in cmd.lower() else TestFramework.JEST,
-            command=cmd,
+            framework=TestFramework.VITEST if "vitest" in display_cmd.lower() else TestFramework.JEST,
+            command=display_cmd,
             total=total,
             passed=passed,
             failed=failed,
@@ -116,7 +136,7 @@ class NodeRunner(BaseRunner):
             if s_m:
                 skipped = int(s_m.group(1) or s_m.group(2))
 
-        # Check for FAIL blocks
+        # Check for FAIL / ✕ blocks
         fail_files = re.findall(r"FAIL\s+([^\n]+)", output)
         if not fail_files:
             fail_files = re.findall(r"✕\s+([^\n]+)", output)

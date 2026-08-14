@@ -1,4 +1,4 @@
-"""Ecosystem and test runner detection engine."""
+"""Ecosystem and test runner detection engine with modern package manager support."""
 
 import json
 from pathlib import Path
@@ -17,8 +17,12 @@ def detect_ecosystem(root_path: Path) -> tuple[Ecosystem, TestFramework, str, li
     root = root_path.resolve()
     configs_found: list[str] = []
 
-    # 1. Check Python
+    # 1. Check Python & modern toolchains (uv, poetry, pdm, pipenv)
     pyproject = root / "pyproject.toml"
+    uv_lock = root / "uv.lock"
+    poetry_lock = root / "poetry.lock"
+    pdm_lock = root / "pdm.lock"
+    pipfile = root / "Pipfile"
     setup_py = root / "setup.py"
     setup_cfg = root / "setup.cfg"
     reqs_txt = root / "requirements.txt"
@@ -26,21 +30,40 @@ def detect_ecosystem(root_path: Path) -> tuple[Ecosystem, TestFramework, str, li
     tox_ini = root / "tox.ini"
 
     python_configs = [
-        p for p in [pyproject, setup_py, setup_cfg, reqs_txt, pytest_ini, tox_ini] if p.exists()
+        p
+        for p in [
+            pyproject,
+            uv_lock,
+            poetry_lock,
+            pdm_lock,
+            pipfile,
+            setup_py,
+            setup_cfg,
+            reqs_txt,
+            pytest_ini,
+            tox_ini,
+        ]
+        if p.exists()
     ]
     if python_configs:
         configs_found.extend([p.name for p in python_configs])
         framework = TestFramework.PYTEST
         cmd = "pytest -ra"
 
+        if uv_lock.exists():
+            cmd = "uv run pytest -ra"
+        elif poetry_lock.exists():
+            cmd = "poetry run pytest -ra"
+        elif pdm_lock.exists():
+            cmd = "pdm run pytest -ra"
+        elif pipfile.exists():
+            cmd = "pipenv run pytest -ra"
+
         # Check if pyproject or requirements specifically mentions unittest or pytest
         if pyproject.exists():
             try:
                 content = pyproject.read_text(encoding="utf-8", errors="ignore")
-                if "pytest" in content:
-                    framework = TestFramework.PYTEST
-                    cmd = "pytest -ra"
-                elif "unittest" in content and "pytest" not in content:
+                if "unittest" in content and "pytest" not in content:
                     framework = TestFramework.UNITTEST
                     cmd = "python -m unittest discover -s tests"
             except Exception:
@@ -48,16 +71,43 @@ def detect_ecosystem(root_path: Path) -> tuple[Ecosystem, TestFramework, str, li
 
         return Ecosystem.PYTHON, framework, cmd, configs_found
 
-    # 2. Check Node / TypeScript / JavaScript
+    # 2. Check Node / TypeScript / JavaScript (pnpm, yarn, bun, deno, npm)
     pkg_json_path = root / "package.json"
+    deno_json = root / "deno.json"
+    deno_jsonc = root / "deno.jsonc"
+
+    if deno_json.exists() or deno_jsonc.exists():
+        cfg_name = "deno.json" if deno_json.exists() else "deno.jsonc"
+        configs_found.append(cfg_name)
+        return Ecosystem.NODE, TestFramework.CUSTOM, "deno test", configs_found
+
     if pkg_json_path.exists():
         configs_found.append("package.json")
-        for extra in ["tsconfig.json", "vitest.config.ts", "jest.config.js", "jest.config.ts"]:
+        for extra in [
+            "tsconfig.json",
+            "vitest.config.ts",
+            "vitest.config.js",
+            "jest.config.js",
+            "jest.config.ts",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lockb",
+            "bun.lock",
+        ]:
             if (root / extra).exists():
                 configs_found.append(extra)
 
+        # Detect package runner
+        pkg_runner = "npm test"
+        if (root / "pnpm-lock.yaml").exists():
+            pkg_runner = "pnpm test"
+        elif (root / "yarn.lock").exists():
+            pkg_runner = "yarn test"
+        elif (root / "bun.lockb").exists() or (root / "bun.lock").exists():
+            pkg_runner = "bun test"
+
         framework = TestFramework.JEST
-        cmd = "npm test"
+        cmd = pkg_runner
 
         try:
             pkg_data = json.loads(pkg_json_path.read_text(encoding="utf-8", errors="ignore"))
@@ -68,10 +118,10 @@ def detect_ecosystem(root_path: Path) -> tuple[Ecosystem, TestFramework, str, li
 
             if "vitest" in all_deps or "vitest" in scripts.get("test", ""):
                 framework = TestFramework.VITEST
-                cmd = "npx vitest run"
+                cmd = "npx vitest run" if pkg_runner == "npm test" else f"{pkg_runner.split()[0]} vitest run"
             elif "jest" in all_deps or "jest" in scripts.get("test", ""):
                 framework = TestFramework.JEST
-                cmd = "npx jest"
+                cmd = "npx jest" if pkg_runner == "npm test" else f"{pkg_runner.split()[0]} jest"
             elif "mocha" in all_deps:
                 framework = TestFramework.MOCHA
                 cmd = "npx mocha"
@@ -79,7 +129,7 @@ def detect_ecosystem(root_path: Path) -> tuple[Ecosystem, TestFramework, str, li
                 framework = TestFramework.PLAYWRIGHT
                 cmd = "npx playwright test"
             elif "test" in scripts:
-                cmd = "npm test"
+                cmd = pkg_runner
         except Exception:
             pass
 

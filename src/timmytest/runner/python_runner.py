@@ -1,53 +1,60 @@
-"""Python test runner supporting pytest and unittest with rich traceback parsing."""
+"""Python test runner supporting pytest and unittest with rich traceback parsing and safe execution."""
 
 import os
 import re
-import subprocess
+import shutil
 import sys
 import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess
 
 
 class PythonRunner(BaseRunner):
-    """Executes Python tests using pytest or unittest."""
+    """Executes Python tests using pytest or unittest with zero shell injection risk."""
 
     def can_handle(self, root_dir: Path) -> bool:
         return (
             (root_dir / "pyproject.toml").exists()
             or (root_dir / "setup.py").exists()
             or (root_dir / "pytest.ini").exists()
+            or (root_dir / "uv.lock").exists()
+            or (root_dir / "poetry.lock").exists()
             or any(root_dir.glob("tests/**/*.py"))
             or any(root_dir.glob("test_*.py"))
         )
 
-    def _find_python_executable(self, root_dir: Path) -> str:
-        """Find the best python executable (local .venv or current sys.executable)."""
-        venv_scripts = root_dir / ".venv" / "Scripts" / "python.exe"
-        venv_bin = root_dir / ".venv" / "bin" / "python"
+    def _find_runner_args(self, root_dir: Path, filter_pattern: str | None = None) -> list[str]:
+        """Detect the optimal runner executable args (uv, poetry, venv pytest, or sys.executable)."""
+        args: list[str] = []
 
-        if venv_scripts.exists():
-            return str(venv_scripts)
-        if venv_bin.exists():
-            return str(venv_bin)
-        return sys.executable
+        # 1. uv
+        if (root_dir / "uv.lock").exists() and shutil.which("uv"):
+            args = ["uv", "run", "pytest", "-v", "--tb=short"]
+        # 2. poetry
+        elif (root_dir / "poetry.lock").exists() and shutil.which("poetry"):
+            args = ["poetry", "run", "pytest", "-v", "--tb=short"]
+        # 3. pdm
+        elif (root_dir / "pdm.lock").exists() and shutil.which("pdm"):
+            args = ["pdm", "run", "pytest", "-v", "--tb=short"]
+        # 4. Local .venv pytest
+        else:
+            venv_pytest_win = root_dir / ".venv" / "Scripts" / "pytest.exe"
+            venv_pytest_nix = root_dir / ".venv" / "bin" / "pytest"
+            if venv_pytest_win.exists():
+                args = [str(venv_pytest_win), "-v", "--tb=short"]
+            elif venv_pytest_nix.exists():
+                args = [str(venv_pytest_nix), "-v", "--tb=short"]
+            elif shutil.which("pytest"):
+                args = ["pytest", "-v", "--tb=short"]
+            else:
+                args = [sys.executable, "-m", "pytest", "-v", "--tb=short"]
 
-    def _find_pytest_executable(self, root_dir: Path) -> str:
-        """Find pytest inside local .venv, system PATH, or fallback to current python -m pytest."""
-        import shutil
+        if filter_pattern:
+            args.extend(["-k", filter_pattern])
 
-        venv_pytest_win = root_dir / ".venv" / "Scripts" / "pytest.exe"
-        venv_pytest_nix = root_dir / ".venv" / "bin" / "pytest"
-
-        if venv_pytest_win.exists():
-            return f'"{venv_pytest_win}"'
-        if venv_pytest_nix.exists():
-            return f'"{venv_pytest_nix}"'
-        if shutil.which("pytest"):
-            return "pytest"
-        return f'"{sys.executable}" -m pytest'
+        return args
 
     def run_tests(
         self,
@@ -56,17 +63,14 @@ class PythonRunner(BaseRunner):
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
     ) -> TestRunResult:
-        pytest_exe = self._find_pytest_executable(root_dir)
-
-        # Decide command
+        cmd_target: list[str] | str
         if custom_cmd:
-            cmd = custom_cmd
+            cmd_target = custom_cmd
+            display_cmd = custom_cmd
         else:
-            # Try pytest first with -v --tb=short
-            cmd_args = [pytest_exe, "-v", "--tb=short"]
-            if filter_pattern:
-                cmd_args.extend(["-k", filter_pattern])
-            cmd = " ".join(cmd_args)
+            cmd_args = self._find_runner_args(root_dir, filter_pattern)
+            cmd_target = cmd_args
+            display_cmd = " ".join(cmd_args)
 
         env = os.environ.copy()
         # Add project root and src to PYTHONPATH
@@ -78,27 +82,19 @@ class PythonRunner(BaseRunner):
         )
 
         start_time = time.time()
-        exit_code = 0
-        raw_output = ""
+        exit_code, raw_output, is_timeout = execute_safe_subprocess(
+            cmd_target,
+            cwd=root_dir,
+            timeout_seconds=timeout_seconds,
+            env=env,
+        )
+        duration = round(time.time() - start_time, 2)
 
-        try:
-            # Run test process
-            proc = subprocess.run(
-                cmd,
-                cwd=str(root_dir),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=env,
-            )
-            raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
+        if is_timeout:
             return TestRunResult(
                 ecosystem=Ecosystem.PYTHON,
                 framework=TestFramework.PYTEST,
-                command=cmd,
+                command=display_cmd,
                 total=0,
                 failed=1,
                 exit_code=124,
@@ -113,11 +109,6 @@ class PythonRunner(BaseRunner):
                     )
                 ],
             )
-        except Exception as e:
-            raw_output = f"Execution error: {e}"
-            exit_code = 1
-
-        duration = round(time.time() - start_time, 2)
 
         # Parse pytest output
         passed, failed, skipped, errors, failures = self._parse_pytest_output(raw_output)
@@ -128,7 +119,6 @@ class PythonRunner(BaseRunner):
 
         total = passed + failed + skipped + errors
         if total == 0 and exit_code != 0:
-            # Collect configuration or syntax failure
             failed = 1
             failures.append(
                 FailureDetail(
@@ -143,7 +133,7 @@ class PythonRunner(BaseRunner):
         return TestRunResult(
             ecosystem=Ecosystem.PYTHON,
             framework=TestFramework.PYTEST,
-            command=cmd,
+            command=display_cmd,
             total=total,
             passed=passed,
             failed=failed,
@@ -198,7 +188,6 @@ class PythonRunner(BaseRunner):
         )
         if failures_section:
             fail_blocks = re.split(r"_{3,}\s+(.*?)\s+_{3,}", failures_section.group(1))
-            # Split produces [leading_text, test_name_1, body_1, test_name_2, body_2, ...]
             i = 1
             while i < len(fail_blocks) - 1:
                 test_name = fail_blocks[i].strip()
@@ -210,13 +199,11 @@ class PythonRunner(BaseRunner):
                 err_type = "AssertionError"
                 msg = ""
 
-                # Look for file and line
                 file_match = re.search(r"([a-zA-Z0-9_\-\./\\]+\.py):(\d+):", body)
                 if file_match:
                     file_path = file_match.group(1)
                     line_num = int(file_match.group(2))
 
-                # Look for error line e.g. E   AssertionError: assert 1 == 2
                 err_match = re.search(
                     r"E\s+([A-Za-z0-9_]+Error|[A-Za-z0-9_]+Exception|[A-Za-z0-9_]+):\s*(.+)", body
                 )
@@ -224,7 +211,6 @@ class PythonRunner(BaseRunner):
                     err_type = err_match.group(1)
                     msg = err_match.group(2).strip()
                 else:
-                    # Generic E line
                     e_lines = [
                         line_item[2:].strip() for line_item in body.splitlines() if line_item.startswith("E ")
                     ]
@@ -267,7 +253,6 @@ class PythonRunner(BaseRunner):
 
         passed = max(0, total_ran - failed - errors - skipped)
 
-        # Parse FAIL / ERROR blocks
         blocks = re.findall(
             r"={5,}\n(?:FAIL|ERROR):\s+([^\n]+)\n-{5,}\n(.*?)(?=\n={5,}|\n-{5,}|\Z)",
             output,

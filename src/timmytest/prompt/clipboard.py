@@ -1,4 +1,4 @@
-"""Cross-platform clipboard utility."""
+"""Cross-platform clipboard utility with safe execution."""
 
 import platform
 import shutil
@@ -8,20 +8,22 @@ import subprocess
 def copy_to_clipboard(text: str) -> bool:
     """
     Copies text to the system clipboard across Windows, macOS, and Linux
-    without raising exceptions. Returns True on success, False on failure.
+    without raising exceptions and without using shell=True.
+    Returns True on success, False on failure.
     """
     os_name = platform.system()
 
     try:
         if os_name == "Windows":
-            # Use clip.exe on Windows
-            proc = subprocess.Popen("clip", stdin=subprocess.PIPE, shell=True)
+            # Use clip.exe without shell=True
+            clip_exe = shutil.which("clip.exe") or "clip"
+            proc = subprocess.Popen([clip_exe], stdin=subprocess.PIPE)
             proc.communicate(text.encode("utf-16le"))
             return proc.returncode == 0
 
         elif os_name == "Darwin":
             # Use pbcopy on macOS
-            proc = subprocess.Popen("pbcopy", stdin=subprocess.PIPE)
+            proc = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
             proc.communicate(text.encode("utf-8"))
             return proc.returncode == 0
 

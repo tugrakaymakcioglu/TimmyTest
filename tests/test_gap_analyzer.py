@@ -53,6 +53,31 @@ def test_gap_analyzer_detects_missing_module(temp_project_dir: Path):
     assert score < 100.0
 
 
+def test_gap_analyzer_prevents_false_positive_substring_match(temp_project_dir: Path):
+    # cat.py should NOT match test_category.py
+    source_modules = [
+        SourceModule(
+            rel_path="src/cat.py",
+            abs_path=str(temp_project_dir / "src/cat.py"),
+            language="py",
+            line_count=30,
+            functions=["meow"],
+        )
+    ]
+    test_modules = [
+        TestModule(
+            rel_path="tests/test_category.py",
+            abs_path=str(temp_project_dir / "tests/test_category.py"),
+            framework=TestFramework.PYTEST,
+            test_functions=["test_category_create"],
+        )
+    ]
+
+    gaps, score = analyze_test_gaps(source_modules, test_modules, Ecosystem.PYTHON, temp_project_dir)
+    assert len(gaps) == 1
+    assert gaps[0].source_module == "src/cat.py"
+
+
 def test_gap_analyzer_100_percent_when_all_covered(temp_project_dir: Path):
     source_modules = [
         SourceModule(

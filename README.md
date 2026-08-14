@@ -6,10 +6,10 @@
 
 ### Zero-Token Test Runner • AST Test Gap Detector • AI Agent Prompt Generator
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v0.1.0-blue.svg?logo=pypi&logoColor=white)](https://pypi.org/project/timmytest/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v1.1.1-blue.svg?logo=pypi&logoColor=white)](https://pypi.org/project/timmytest/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![CI Tests](https://img.shields.io/badge/tests-31%20passing-brightgreen.svg?logo=pytest&logoColor=white)](tests/)
+[![CI Tests](https://img.shields.io/badge/tests-43%20passing-brightgreen.svg?logo=pytest&logoColor=white)](tests/)
 [![Ruff Code Style](https://img.shields.io/badge/code%20style-ruff-black.svg?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
 [![AI Agent Ready](https://img.shields.io/badge/AI%20Agent-Claude%20%7C%20Codex%20%7C%20Cursor%20%7C%20Antigravity-orange.svg?logo=openai&logoColor=white)](#-why-timmytest-the-token-drain-problem)
 

@@ -1,4 +1,4 @@
-"""Test Gap Analyzer - correlates source modules to test files and scores readiness."""
+"""Test Gap Analyzer - correlates source modules to test files with high precision and import verification."""
 
 from pathlib import Path
 
@@ -6,39 +6,49 @@ from timmytest.detector.models import Ecosystem, Priority, SourceModule, TestGap
 
 
 def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) -> TestModule | None:
-    """Find if a source module has a corresponding test file."""
+    """
+    Find if a source module has a corresponding test file using exact naming,
+    relative path mirroring, or AST import verification.
+    """
     src_path = Path(source.rel_path)
     src_stem = src_path.stem.lower()
-    src_parts = [p.lower() for p in src_path.parts]
+    src_module_name = src_path.stem
 
     for test in test_modules:
         test_path = Path(test.rel_path)
         test_stem = test_path.stem.lower()
         test_clean_stem = (
-            test_stem.removeprefix("test_").removesuffix("_test").removesuffix(".test").removesuffix(".spec")
+            test_stem.removeprefix("test_")
+            .removesuffix("_test")
+            .removesuffix(".test")
+            .removesuffix(".spec")
+            .removesuffix("_spec")
         )
 
-        # 1. Exact match e.g. test_auth matches auth.py
+        # 1. Exact stem match: e.g. test_auth.py or auth_test.py or auth.test.ts matches auth.py
         if (
             test_stem == f"test_{src_stem}"
             or test_stem == f"{src_stem}_test"
             or test_stem == f"{src_stem}.test"
             or test_stem == f"{src_stem}.spec"
+            or test_stem == f"{src_stem}_spec"
             or test_stem == src_stem
             or test_clean_stem == src_stem
         ):
             return test
 
-        # 2. Package / subfolder match e.g. test_detector matches src/timmytest/detector/ecosystem.py
-        # or test_runners matches src/timmytest/runner/python_runner.py
-        for part in src_parts:
-            part_clean = part.removesuffix(".py").removesuffix(".ts").removesuffix(".js")
-            if part_clean in {test_clean_stem, test_clean_stem.rstrip("s"), f"{test_clean_stem}s"}:
+        # 2. Path mirroring match: e.g. src/api/user.py -> tests/api/test_user.py
+        if src_stem in test_clean_stem.split("_") or test_clean_stem in src_stem.split("_"):
+            src_parent_names = {p.lower() for p in src_path.parts[:-1]}
+            test_parent_names = {p.lower() for p in test_path.parts[:-1]}
+            if src_parent_names.intersection(test_parent_names) - {"src", "lib", "app"}:
                 return test
 
-        # 3. Stem in test name or vice-versa
-        if src_stem in test_stem or (len(test_clean_stem) > 3 and test_clean_stem in src_stem):
-            return test
+        # 3. Import verification: check if test imports the source module
+        for imp in test.imported_modules:
+            imp_parts = imp.split(".")
+            if src_module_name in imp_parts or imp.endswith(f"/{src_module_name}") or imp.endswith(f"\\{src_module_name}"):
+                return test
 
     return None
 
@@ -71,6 +81,10 @@ def _suggest_test_path(source: SourceModule, ecosystem: Ecosystem, root_has_test
         return f"{src_path.parent}/{stem}_test.go"
     elif ecosystem == Ecosystem.RUST:
         return f"tests/{stem}_test.rs"
+    elif ecosystem == Ecosystem.PHP:
+        return f"tests/{stem.capitalize()}Test.php"
+    elif ecosystem == Ecosystem.RUBY:
+        return f"spec/{stem}_spec.rb"
     else:
         return f"tests/test_{stem}.{source.language}"
 
@@ -86,7 +100,11 @@ def analyze_test_gaps(
     and calculates a test readiness score (0.0 - 100.0).
     """
     gaps: list[TestGap] = []
-    has_tests_dir = (root_dir / "tests").is_dir() or (root_dir / "__tests__").is_dir()
+    has_tests_dir = (
+        (root_dir / "tests").is_dir()
+        or (root_dir / "__tests__").is_dir()
+        or (root_dir / "spec").is_dir()
+    )
 
     covered_count = 0
     total_sources = len(source_modules)
@@ -123,6 +141,7 @@ def analyze_test_gaps(
                     priority=priority,
                     reason=reason_str,
                     functions_to_test=src.functions,
+                    function_details=src.function_details,
                     classes_to_test=src.classes,
                 )
             )

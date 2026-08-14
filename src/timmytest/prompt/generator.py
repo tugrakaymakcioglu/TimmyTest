@@ -1,7 +1,8 @@
 """AI Agent Prompt Generator for TimmyTest.
 
 Produces high-density, token-optimized instructions for AI coding agents
-such as Claude Code, OpenAI Codex, Antigravity, Cursor, and Copilot.
+such as Claude Code, OpenAI Codex, Antigravity, Cursor, and Copilot with
+zero-token signature extraction.
 """
 
 from timmytest.detector.models import Priority, ProjectInfo, TestRunResult
@@ -13,7 +14,8 @@ def generate_agent_prompt(
     max_trace_lines: int = 8,
 ) -> str:
     """
-    Constructs an ultra-dense, actionable prompt for an AI agent.
+    Constructs an ultra-dense, actionable prompt for an AI agent with function signatures
+    and test context so the agent doesn't need extra token roundtrips to inspect source files.
     """
     lines: list[str] = []
 
@@ -66,22 +68,30 @@ def generate_agent_prompt(
         lines.append("#### ✅ Existing Tests: All Passing (0 Failures)")
         lines.append("")
 
-    # Section 2: Missing Test Modules / Test Gaps
+    # Section 2: Missing Test Modules / Test Gaps with Signatures
     if project.test_gaps:
         lines.append(f"#### ⚠️ Missing Test Modules & Gaps ({len(project.test_gaps)})")
         for idx, gap in enumerate(project.test_gaps, start=1):
             badge = f"[{gap.priority.value}]"
-            targets: list[str] = []
-            if gap.classes_to_test:
-                targets.append(f"Classes: {', '.join(gap.classes_to_test[:3])}")
-            if gap.functions_to_test:
-                targets.append(f"Functions: {', '.join(gap.functions_to_test[:4])}")
-            target_str = f" ({'; '.join(targets)})" if targets else ""
 
             lines.append(
-                f"{idx}. **{badge}** Source: `{gap.source_module}` -> Expected Test: `{gap.suggested_test_file}`{target_str}"
+                f"{idx}. **{badge}** Source: `{gap.source_module}` -> Expected Test: `{gap.suggested_test_file}`"
             )
             lines.append(f"   - Reason: {gap.reason}")
+
+            if gap.classes_to_test:
+                lines.append(f"   - **Classes to Test**: `{', '.join(gap.classes_to_test)}`")
+
+            if gap.function_details:
+                lines.append("   - **Functions & Signatures**:")
+                for fd in gap.function_details[:5]:
+                    sig = fd.signature or "()"
+                    doc = f' - "{fd.docstring}"' if fd.docstring else ""
+                    prefix = "async " if fd.is_async else ""
+                    lines.append(f"     * `{prefix}{fd.name}{sig}`{doc}")
+            elif gap.functions_to_test:
+                lines.append(f"   - **Functions to Test**: `{', '.join(gap.functions_to_test[:5])}`")
+
         lines.append("")
 
     # Section 3: Direct Action Items for AI Agent

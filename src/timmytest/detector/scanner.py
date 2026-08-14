@@ -1,10 +1,16 @@
-"""AST and regex-based source and test file scanner."""
+"""AST and regex-based source and test file scanner with multi-language AST extraction."""
 
 import ast
 import re
 from pathlib import Path
 
-from timmytest.detector.models import Ecosystem, SourceModule, TestFramework, TestModule
+from timmytest.detector.models import (
+    Ecosystem,
+    FunctionDetail,
+    SourceModule,
+    TestFramework,
+    TestModule,
+)
 
 IGNORED_DIRS = {
     ".git",
@@ -55,23 +61,56 @@ def _is_test_file(path: Path) -> bool:
         or "test" in parent_names
         or "__tests__" in parent_names
         or "spec" in parent_names
+        or "specs" in parent_names
     ):
         return True
 
-    if (
+    return bool(
         name.startswith("test_")
         or name.endswith("_test.py")
         or name.endswith(".test.js")
         or name.endswith(".test.ts")
-    ):
-        return True
-    return bool(name.endswith(".spec.js") or name.endswith(".spec.ts") or name.endswith("_test.go"))
+        or name.endswith(".test.jsx")
+        or name.endswith(".test.tsx")
+        or name.endswith(".spec.js")
+        or name.endswith(".spec.ts")
+        or name.endswith(".spec.jsx")
+        or name.endswith(".spec.tsx")
+        or name.endswith("_test.go")
+        or name.endswith("_test.rs")
+        or name.endswith("test.php")
+        or name.endswith("_spec.rb")
+        or name.endswith("test.cs")
+        or name.endswith("test.java")
+    )
 
 
-def _parse_python_source(file_path: Path) -> tuple[list[str], list[str], int]:
-    """Parse a Python source file to extract top-level and method functions and classes."""
-    functions: list[str] = []
+def _format_python_args(args_node: ast.arguments) -> str:
+    """Formats AST arguments node into readable signature string."""
+    parts: list[str] = []
+    for arg in args_node.args:
+        ann = f": {ast.unparse(arg.annotation)}" if arg.annotation else ""
+        parts.append(f"{arg.arg}{ann}")
+    if args_node.vararg:
+        parts.append(f"*{args_node.vararg.arg}")
+    for kwarg in args_node.kwonlyargs:
+        ann = f": {ast.unparse(kwarg.annotation)}" if kwarg.annotation else ""
+        parts.append(f"{kwarg.arg}{ann}")
+    if args_node.kwarg:
+        parts.append(f"**{args_node.kwarg.arg}")
+    return f"({', '.join(parts)})"
+
+
+def _parse_python_source(
+    file_path: Path,
+) -> tuple[list[str], list[FunctionDetail], list[str], list[str], int]:
+    """
+    Parse Python source file to extract functions with signatures, docstrings, classes, and imports.
+    """
+    func_names: list[str] = []
+    func_details: list[FunctionDetail] = []
     classes: list[str] = []
+    imports: list[str] = []
     line_count = 0
 
     try:
@@ -80,85 +119,230 @@ def _parse_python_source(file_path: Path) -> tuple[list[str], list[str], int]:
         tree = ast.parse(content, filename=str(file_path))
 
         for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Imports
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append(node.module)
+
+            # Top-level Functions
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if not node.name.startswith("_"):
-                    functions.append(node.name)
+                    sig_args = _format_python_args(node.args)
+                    ret_ann = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+                    sig = f"{sig_args}{ret_ann}"
+                    doc = ast.get_docstring(node) or ""
+                    first_doc_line = doc.strip().splitlines()[0] if doc.strip() else ""
+
+                    func_names.append(node.name)
+                    func_details.append(
+                        FunctionDetail(
+                            name=node.name,
+                            signature=sig,
+                            docstring=first_doc_line,
+                            is_async=isinstance(node, ast.AsyncFunctionDef),
+                            is_method=False,
+                            line_number=node.lineno,
+                        )
+                    )
+
+            # Classes
             elif isinstance(node, ast.ClassDef):
                 classes.append(node.name)
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
                         not item.name.startswith("_") or item.name == "__init__"
                     ):
-                        functions.append(f"{node.name}.{item.name}")
+                        full_name = f"{node.name}.{item.name}"
+                        sig_args = _format_python_args(item.args)
+                        ret_ann = f" -> {ast.unparse(item.returns)}" if item.returns else ""
+                        sig = f"{sig_args}{ret_ann}"
+                        doc = ast.get_docstring(item) or ""
+                        first_doc_line = doc.strip().splitlines()[0] if doc.strip() else ""
+
+                        func_names.append(full_name)
+                        func_details.append(
+                            FunctionDetail(
+                                name=full_name,
+                                signature=sig,
+                                docstring=first_doc_line,
+                                is_async=isinstance(item, ast.AsyncFunctionDef),
+                                is_method=True,
+                                line_number=item.lineno,
+                            )
+                        )
     except Exception:
         pass
 
-    return functions, classes, line_count
+    return func_names, func_details, classes, imports, line_count
 
 
-def _parse_python_test(file_path: Path) -> list[str]:
-    """Extract test functions from a Python test file."""
+def _parse_python_test(file_path: Path) -> tuple[list[str], list[str]]:
+    """Extract test functions and imported modules from a Python test file."""
     test_funcs: list[str] = []
+    imports: list[str] = []
+
     try:
         content = file_path.read_text(encoding="utf-8", errors="ignore")
         tree = ast.parse(content, filename=str(file_path))
         for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name.startswith("test_") or node.name.startswith("test"):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.append(alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.append(node.module)
+
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name.startswith("test_") or node.name == "test":
                     test_funcs.append(node.name)
             elif isinstance(node, ast.ClassDef):
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
-                        item.name.startswith("test_") or item.name.startswith("test")
+                        item.name.startswith("test_") or item.name == "test"
                     ):
                         test_funcs.append(f"{node.name}.{item.name}")
     except Exception:
         pass
-    return test_funcs
+    return test_funcs, imports
 
 
-def _parse_generic_source(file_path: Path) -> tuple[list[str], list[str], int]:
-    """Parse JS/TS/Go/Rust using regex heuristics."""
+def _parse_generic_source(
+    file_path: Path,
+) -> tuple[list[str], list[FunctionDetail], list[str], list[str], int]:
+    """Parse JS/TS/Go/Rust/Java/C#/PHP/Ruby source files."""
     functions: list[str] = []
+    details: list[FunctionDetail] = []
     classes: list[str] = []
+    imports: list[str] = []
     line_count = 0
 
     try:
         content = file_path.read_text(encoding="utf-8", errors="ignore")
         line_count = len(content.splitlines())
 
-        # JS/TS functions & classes
-        func_matches = re.findall(
-            r"(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z0-9_$]+)|(?:export\s+)?const\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>",
+        # 1. Imports extraction
+        import_matches = re.findall(
+            r"""(?:import\s+(?:.*?from\s+)?['"]([^'"]+)['"]|require\(['"]([^'"]+)['"]\)|use\s+([a-zA-Z0-9_:\\]+);)""",
             content,
         )
-        for m in func_matches:
-            fn_name = m[0] or m[1]
-            if fn_name and not fn_name.startswith("_"):
-                functions.append(fn_name)
+        for m in import_matches:
+            imp = m[0] or m[1] or m[2]
+            if imp:
+                imports.append(imp)
 
-        class_matches = re.findall(r"(?:export\s+)?class\s+([a-zA-Z0-9_$]+)", content)
-        for cm in class_matches:
+        # 2. JS / TS functions & classes
+        js_func_matches = re.finditer(
+            r"(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)|(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?(?:\(([^)]*)\)|[a-zA-Z0-9_$]+)(?:\s*:\s*[^=]+)?\s*=>",
+            content,
+        )
+        for m in js_func_matches:
+            fn_name = m.group(1) or m.group(3)
+            fn_args = m.group(2) or m.group(4) or ""
+            if fn_name and not fn_name.startswith("_") and fn_name not in functions:
+                functions.append(fn_name)
+                details.append(
+                    FunctionDetail(
+                        name=fn_name,
+                        signature=f"({fn_args.strip()})",
+                        is_async="async" in m.group(0),
+                    )
+                )
+
+        # Class methods in JS/TS
+        js_method_matches = re.finditer(
+            r"(?:public|private|protected|async|\s)+\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)\s*\{",
+            content,
+        )
+        for m in js_method_matches:
+            m_name = m.group(1)
+            if (
+                m_name
+                and m_name not in {"if", "for", "while", "switch", "catch", "function", "constructor"}
+                and not m_name.startswith("_")
+                and m_name not in functions
+            ):
+                functions.append(m_name)
+                details.append(FunctionDetail(name=m_name, signature=f"({m.group(2).strip()})", is_method=True))
+
+        for cm in re.findall(r"(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z0-9_$]+)", content):
             classes.append(cm)
 
-        # Go functions
-        go_funcs = re.findall(r"func\s+([A-Z][a-zA-Z0-9_]*)\s*\(", content)
-        functions.extend(go_funcs)
+        # 3. Go functions and struct methods
+        go_methods = re.finditer(r"func\s+(?:\(([^)]+)\)\s+)?([a-zA-Z0-9_]+)\s*\(([^)]*)\)", content)
+        for gm in go_methods:
+            receiver = gm.group(1)
+            fn_name = gm.group(2)
+            args = gm.group(3)
+            if fn_name and fn_name not in {"init", "main"}:
+                rec_clean = receiver.split()[-1].lstrip("*") if receiver else ""
+                full_name = f"{rec_clean}.{fn_name}" if rec_clean else fn_name
+                functions.append(full_name)
+                details.append(FunctionDetail(name=full_name, signature=f"({args})", is_method=bool(receiver)))
 
-        # Rust functions
-        rust_funcs = re.findall(r"pub\s+fn\s+([a-zA-Z0-9_]+)\s*\(", content)
-        functions.extend(rust_funcs)
+        # 4. Rust functions and impl methods
+        rust_funcs = re.finditer(r"(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)", content)
+        for rf in rust_funcs:
+            fn_name = rf.group(1)
+            args = rf.group(2)
+            if fn_name:
+                functions.append(fn_name)
+                details.append(FunctionDetail(name=fn_name, signature=f"({args})", is_async="async" in rf.group(0)))
+
+        for r_struct in re.findall(r"(?:pub\s+)?(?:struct|enum|trait)\s+([a-zA-Z0-9_]+)", content):
+            classes.append(r_struct)
+
+        # 5. Java / C# / PHP / Ruby classes and methods
+        java_methods = re.finditer(
+            r"(?:public|protected|private)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>\[\]]+)\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)",
+            content,
+        )
+        for jm in java_methods:
+            fn_name = jm.group(1)
+            if fn_name and fn_name not in classes and fn_name not in functions:
+                functions.append(fn_name)
+                details.append(FunctionDetail(name=fn_name, signature=f"({jm.group(2)})", is_method=True))
+
+        for jc in re.findall(r"(?:public\s+)?class\s+([a-zA-Z0-9_]+)", content):
+            if jc not in classes:
+                classes.append(jc)
+
+        # PHP methods
+        php_methods = re.finditer(r"function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)", content)
+        for pm in php_methods:
+            p_name = pm.group(1)
+            if p_name and not p_name.startswith("__") and p_name not in functions:
+                functions.append(p_name)
+                details.append(FunctionDetail(name=p_name, signature=f"({pm.group(2)})"))
+
+        # Ruby methods
+        rb_methods = re.finditer(r"def\s+([a-zA-Z0-9_!?]+)(?:\s*\(([^)]*)\))?", content)
+        for rm in rb_methods:
+            r_name = rm.group(1)
+            if r_name and r_name not in functions:
+                functions.append(r_name)
+                details.append(FunctionDetail(name=r_name, signature=f"({rm.group(2) or ''})"))
     except Exception:
         pass
 
-    return functions, classes, line_count
+    return functions, details, classes, imports, line_count
 
 
-def _parse_generic_test(file_path: Path) -> list[str]:
-    """Extract test blocks from JS/TS/Go/Rust files."""
+def _parse_generic_test(file_path: Path) -> tuple[list[str], list[str]]:
+    """Extract test blocks and imports from JS/TS/Go/Rust/Java files."""
     tests: list[str] = []
+    imports: list[str] = []
+
     try:
         content = file_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Extract imports
+        for imp in re.findall(
+            r"""(?:import\s+(?:.*?from\s+)?['"]([^'"]+)['"]|require\(['"]([^'"]+)['"]\))""",
+            content,
+        ):
+            imports.append(imp[0] or imp[1])
+
         # JS / TS it / test blocks
         js_tests = re.findall(r"(?:it|test)\s*\(\s*['\"]([^'\"]+)['\"]", content)
         tests.extend(js_tests)
@@ -170,24 +354,48 @@ def _parse_generic_test(file_path: Path) -> list[str]:
         # Rust #[test] functions
         rust_tests = re.findall(r"#\[test\][\s\n]+fn\s+([a-zA-Z0-9_]+)", content)
         tests.extend(rust_tests)
+
+        # Java / C# @Test annotations
+        java_tests = re.findall(
+            r"@Test[\s\n]+(?:public\s+)?(?:void\s+)?([a-zA-Z0-9_]+)\s*\(",
+            content,
+        )
+        tests.extend(java_tests)
     except Exception:
         pass
-    return tests
+    return tests, imports
 
 
 def scan_project_structure(
     root_path: Path,
     ecosystem: Ecosystem,
     framework: TestFramework,
+    custom_ignored_dirs: list[str] | None = None,
+    custom_ignored_files: list[str] | None = None,
 ) -> tuple[list[SourceModule], list[TestModule]]:
     """
-    Scans the repository to identify source modules and test modules.
+    Scans the repository to identify source modules and test modules with AST metadata.
     """
     root = root_path.resolve()
     source_modules: list[SourceModule] = []
     test_modules: list[TestModule] = []
 
-    valid_extensions = {".py", ".ts", ".js", ".jsx", ".tsx", ".rs", ".go", ".php", ".rb", ".cs", ".java"}
+    effective_ignored_dirs = IGNORED_DIRS.union(set(custom_ignored_dirs or []))
+    effective_ignored_files = IGNORED_FILES.union(set(custom_ignored_files or []))
+
+    valid_extensions = {
+        ".py",
+        ".ts",
+        ".js",
+        ".jsx",
+        ".tsx",
+        ".rs",
+        ".go",
+        ".php",
+        ".rb",
+        ".cs",
+        ".java",
+    }
 
     for item in root.rglob("*"):
         if not item.is_file():
@@ -195,18 +403,20 @@ def scan_project_structure(
 
         # Check ignored path components
         rel_parts = set(item.relative_to(root).parts)
-        if any(ignored in rel_parts for ignored in IGNORED_DIRS):
+        if any(ignored in rel_parts for ignored in effective_ignored_dirs):
             continue
 
-        if item.name in IGNORED_FILES or item.suffix not in valid_extensions:
+        if item.name in effective_ignored_files or item.suffix not in valid_extensions:
             continue
 
         rel_path = item.relative_to(root).as_posix()
         is_test = _is_test_file(item)
 
         if is_test:
-            # Parse test file
-            test_funcs = _parse_python_test(item) if item.suffix == ".py" else _parse_generic_test(item)
+            if item.suffix == ".py":
+                test_funcs, test_imports = _parse_python_test(item)
+            else:
+                test_funcs, test_imports = _parse_generic_test(item)
 
             test_modules.append(
                 TestModule(
@@ -214,15 +424,15 @@ def scan_project_structure(
                     abs_path=str(item),
                     framework=framework,
                     test_functions=test_funcs,
+                    imported_modules=test_imports,
                     line_count=len(item.read_text(encoding="utf-8", errors="ignore").splitlines()),
                 )
             )
         else:
-            # Parse source file
             if item.suffix == ".py":
-                funcs, classes, lines = _parse_python_source(item)
+                funcs, details, classes, imports, lines = _parse_python_source(item)
             else:
-                funcs, classes, lines = _parse_generic_source(item)
+                funcs, details, classes, imports, lines = _parse_generic_source(item)
 
             lower_name = item.stem.lower()
             is_entry = lower_name in {"main", "app", "cli", "index", "server", "runner"}
@@ -242,7 +452,9 @@ def scan_project_structure(
                     language=item.suffix.lstrip("."),
                     line_count=lines,
                     functions=funcs,
+                    function_details=details,
                     classes=classes,
+                    imports=imports,
                     is_entrypoint=is_entry,
                     is_utility=is_util,
                     is_model=is_model,

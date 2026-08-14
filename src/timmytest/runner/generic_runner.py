@@ -1,15 +1,14 @@
-"""Generic / custom command test runner."""
+"""Generic / custom command test runner with safe execution."""
 
-import subprocess
 import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess
 
 
 class GenericRunner(BaseRunner):
-    """Fallback runner for custom test commands."""
+    """Fallback runner for custom test commands, Maven, Gradle, .NET, PHPUnit, and RSpec."""
 
     def can_handle(self, root_dir: Path) -> bool:
         return True
@@ -20,27 +19,23 @@ class GenericRunner(BaseRunner):
         custom_cmd: str | None = None,
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
+        ecosystem: Ecosystem = Ecosystem.GENERIC,
+        framework: TestFramework = TestFramework.CUSTOM,
     ) -> TestRunResult:
         cmd = custom_cmd or "pytest"
         start_time = time.time()
-        raw_output = ""
-        exit_code = 0
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(root_dir),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
-            raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
+        exit_code, raw_output, is_timeout = execute_safe_subprocess(
+            cmd,
+            cwd=root_dir,
+            timeout_seconds=timeout_seconds,
+        )
+        duration = round(time.time() - start_time, 2)
+
+        if is_timeout:
             return TestRunResult(
-                ecosystem=Ecosystem.GENERIC,
-                framework=TestFramework.CUSTOM,
+                ecosystem=ecosystem,
+                framework=framework,
                 command=cmd,
                 total=0,
                 failed=1,
@@ -56,13 +51,8 @@ class GenericRunner(BaseRunner):
                     )
                 ],
             )
-        except Exception as e:
-            raw_output = f"Execution error: {e}"
-            exit_code = 1
 
-        duration = round(time.time() - start_time, 2)
         failures = []
-
         if exit_code != 0:
             failures.append(
                 FailureDetail(
@@ -75,8 +65,8 @@ class GenericRunner(BaseRunner):
             )
 
         return TestRunResult(
-            ecosystem=Ecosystem.GENERIC,
-            framework=TestFramework.CUSTOM,
+            ecosystem=ecosystem,
+            framework=framework,
             command=cmd,
             total=1 if exit_code == 0 else 1,
             passed=1 if exit_code == 0 else 0,

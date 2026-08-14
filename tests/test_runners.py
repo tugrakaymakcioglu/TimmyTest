@@ -1,9 +1,20 @@
-"""Tests for test runner parsers."""
+"""Tests for test runner parsers, safe execution, and ANSI cleaning."""
 
+from pathlib import Path
+
+from timmytest.detector.models import Ecosystem, TestFramework
+from timmytest.runner.base import strip_ansi
 from timmytest.runner.go_runner import GoRunner
 from timmytest.runner.node_runner import NodeRunner
+from timmytest.runner.orchestrator import run_project_tests
 from timmytest.runner.python_runner import PythonRunner
 from timmytest.runner.rust_runner import RustRunner
+
+
+def test_strip_ansi():
+    colored_text = "\x1b[32mPASS\x1b[0m \x1b[1mtests/auth.test.ts\x1b[0m"
+    clean = strip_ansi(colored_text)
+    assert clean == "PASS tests/auth.test.ts"
 
 
 def test_python_runner_parse_pytest_output():
@@ -34,17 +45,17 @@ FAILED tests/test_auth.py::test_bad_pass - AssertionError: assert 403 == 401
     assert "assert 403 == 401" in failures[0].message
 
 
-def test_node_runner_parse_jest_output():
+def test_node_runner_parse_jest_output_with_ansi():
     runner = NodeRunner()
-    sample_output = """
-FAIL src/auth.test.ts
+    sample_output = strip_ansi("""
+\x1b[31mFAIL\x1b[0m src/auth.test.ts
   ● Auth › should reject invalid password
     expect(received).toBe(expected) // Object.is equality
     Expected: 401
     Received: 403
 
-Tests:       1 failed, 4 passed, 5 total
-"""
+\x1b[1mTests:       1 failed, 4 passed, 5 total\x1b[0m
+""")
     passed, failed, skipped, failures = runner._parse_node_output(sample_output)
 
     assert passed == 4
@@ -100,3 +111,36 @@ def test_go_runner_parse_output():
     assert skipped == 1
     assert len(failures) == 1
     assert failures[0].test_name == "TestSubtract"
+
+
+def test_orchestrator_multi_ecosystem(temp_project_dir: Path):
+    import sys
+    # Test Java project orchestration
+    (temp_project_dir / "pom.xml").write_text("<project></project>", encoding="utf-8")
+    py_exe = sys.executable
+    result = run_project_tests(
+        temp_project_dir,
+        Ecosystem.JAVA,
+        TestFramework.MAVEN,
+        custom_cmd=f'"{py_exe}" -c "print(\'mvn_test_ran\')"',
+    )
+    assert result.has_executed is True
+    assert "mvn_test_ran" in result.raw_output
+
+
+def test_generic_runner(temp_project_dir: Path):
+    import sys
+
+    from timmytest.runner.generic_runner import GenericRunner
+
+    runner = GenericRunner()
+    assert runner.can_handle(temp_project_dir) is True
+    py_exe = sys.executable
+    res = runner.run_tests(
+        temp_project_dir,
+        custom_cmd=f'"{py_exe}" -c "import sys; sys.exit(0)"',
+    )
+    assert res.has_executed is True
+    assert res.passed == 1
+    assert res.failed == 0
+

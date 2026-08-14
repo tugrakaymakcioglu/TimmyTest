@@ -1,16 +1,15 @@
-"""Rust test runner using cargo test."""
+"""Rust test runner using cargo test with safe execution."""
 
 import re
-import subprocess
 import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess
 
 
 class RustRunner(BaseRunner):
-    """Executes Rust tests via cargo test."""
+    """Executes Rust tests via cargo test with zero shell injection."""
 
     def can_handle(self, root_dir: Path) -> bool:
         return (root_dir / "Cargo.toml").exists()
@@ -22,30 +21,30 @@ class RustRunner(BaseRunner):
         timeout_seconds: int = 120,
         filter_pattern: str | None = None,
     ) -> TestRunResult:
-        cmd = custom_cmd or "cargo test"
-        if filter_pattern and not custom_cmd:
-            cmd = f"cargo test {filter_pattern}"
+        cmd_target: list[str] | str
+        if custom_cmd:
+            cmd_target = custom_cmd
+            display_cmd = custom_cmd
+        else:
+            args = ["cargo", "test"]
+            if filter_pattern:
+                args.append(filter_pattern)
+            cmd_target = args
+            display_cmd = " ".join(args)
 
         start_time = time.time()
-        raw_output = ""
-        exit_code = 0
+        exit_code, raw_output, is_timeout = execute_safe_subprocess(
+            cmd_target,
+            cwd=root_dir,
+            timeout_seconds=timeout_seconds,
+        )
+        duration = round(time.time() - start_time, 2)
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(root_dir),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
-            raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
+        if is_timeout:
             return TestRunResult(
                 ecosystem=Ecosystem.RUST,
                 framework=TestFramework.CARGO,
-                command=cmd,
+                command=display_cmd,
                 total=0,
                 failed=1,
                 exit_code=124,
@@ -60,11 +59,7 @@ class RustRunner(BaseRunner):
                     )
                 ],
             )
-        except Exception as e:
-            raw_output = f"Execution error: {e}"
-            exit_code = 1
 
-        duration = round(time.time() - start_time, 2)
         passed, failed, ignored, failures = self._parse_cargo_output(raw_output)
 
         total = passed + failed + ignored
@@ -83,7 +78,7 @@ class RustRunner(BaseRunner):
         return TestRunResult(
             ecosystem=Ecosystem.RUST,
             framework=TestFramework.CARGO,
-            command=cmd,
+            command=display_cmd,
             total=total,
             passed=passed,
             failed=failed,

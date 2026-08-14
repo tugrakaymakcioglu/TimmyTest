@@ -13,7 +13,7 @@ runner = CliRunner()
 def test_cli_version():
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "timmytest version" in result.output
+    assert "1.1.1" in result.output
 
 
 def test_cli_scan(temp_project_dir: Path):
@@ -47,6 +47,27 @@ def test_cli_check_no_run(temp_project_dir: Path):
     result = runner.invoke(app, ["check", str(temp_project_dir), "--no-run", "--no-banner"])
     assert result.exit_code == 0
     assert "AI Agent Handoff Prompt" in result.output
+
+
+def test_cli_check_safe_dry_run(temp_project_dir: Path):
+    src_dir = temp_project_dir / "src"
+    src_dir.mkdir()
+    (src_dir / "utils.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["check", str(temp_project_dir), "--safe", "--no-banner"])
+    assert result.exit_code == 0
+    assert "AI Agent Handoff Prompt" in result.output
+
+
+def test_cli_check_fail_under(temp_project_dir: Path):
+    src_dir = temp_project_dir / "src"
+    src_dir.mkdir()
+    (src_dir / "utils.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+
+    # Readiness score is 0.0%, fail_under is 80.0% -> should exit code 1
+    result = runner.invoke(app, ["check", str(temp_project_dir), "--no-run", "--fail-under", "80"])
+    assert result.exit_code == 1
+    assert "below required threshold" in result.output
 
 
 def test_cli_init_command(temp_project_dir: Path):

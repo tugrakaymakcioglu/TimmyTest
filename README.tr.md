@@ -6,10 +6,10 @@
 
 ### Sıfır-Token Test Koşucusu • AST Test Açığı Tespit Edici • AI Ajan Prompt Üreticisi
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v0.1.0-blue.svg?logo=pypi&logoColor=white)](https://pypi.org/project/timmytest/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v1.1.1-blue.svg?logo=pypi&logoColor=white)](https://pypi.org/project/timmytest/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Lisans: Apache-2.0](https://img.shields.io/badge/Lisans-Apache%202.0-green.svg)](LICENSE)
-[![Testler](https://img.shields.io/badge/testler-31%20ba%C5%9Far%C4%B1l%C4%B1-brightgreen.svg?logo=pytest&logoColor=white)](tests/)
+[![Testler](https://img.shields.io/badge/testler-43%20ba%C5%9Far%C4%B1l%C4%B1-brightgreen.svg?logo=pytest&logoColor=white)](tests/)
 [![AI Agent Uyumlu](https://img.shields.io/badge/AI%20Agent-Claude%20%7C%20Codex%20%7C%20Cursor%20%7C%20Antigravity-orange.svg?logo=openai&logoColor=white)](#-neden-timmytest-token-t%C3%BCkenme-problemi)
 
 [English README](README.md) &nbsp;·&nbsp; [Hızlı Başlangıç](#-h%C4%B1zl%C4%B1-ba%C5%9Flang%C4%B1%C3%A7) &nbsp;·&nbsp; [Kurulum](#-kurulum) &nbsp;·&nbsp; [Temel Özellikler](#-temel-%C3%B6zellikler) &nbsp;·&nbsp; [Desteklenen Ekosistemler](#-desteklenen-ekosistemler)

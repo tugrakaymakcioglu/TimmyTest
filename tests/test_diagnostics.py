@@ -54,3 +54,26 @@ def test_suggestion_for_key_error():
     sug = generate_fix_suggestion(failure)
     assert "KeyError" in sug
     assert "user_id" in sug
+
+
+def test_enrich_test_failures():
+    from timmytest.detector.models import Ecosystem, TestFramework, TestRunResult
+    from timmytest.diagnostics.analyzer import enrich_test_failures
+
+    run_result = TestRunResult(
+        ecosystem=Ecosystem.PYTHON,
+        framework=TestFramework.PYTEST,
+        total=1,
+        failed=1,
+        failures=[
+            FailureDetail(
+                test_name="test_bad",
+                error_type="KeyError",
+                message="KeyError: 'token'",
+            )
+        ],
+    )
+    enriched = enrich_test_failures(run_result)
+    assert len(enriched.failures) == 1
+    assert "KeyError" in enriched.failures[0].suggested_fix
+

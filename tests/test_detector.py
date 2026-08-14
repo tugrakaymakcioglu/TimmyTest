@@ -1,4 +1,4 @@
-"""Tests for ecosystem detection and file scanning."""
+"""Tests for ecosystem detection and file scanning with rich AST extraction."""
 
 from pathlib import Path
 
@@ -19,16 +19,25 @@ def test_detect_python_pytest(temp_project_dir: Path):
     assert "pyproject.toml" in configs
 
 
-def test_detect_node_vitest(temp_project_dir: Path):
+def test_detect_python_uv(temp_project_dir: Path):
+    (temp_project_dir / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+    (temp_project_dir / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    eco, fw, cmd, configs = detect_ecosystem(temp_project_dir)
+    assert eco == Ecosystem.PYTHON
+    assert "uv run pytest" in cmd
+
+
+def test_detect_node_pnpm_vitest(temp_project_dir: Path):
     (temp_project_dir / "package.json").write_text(
         '{"name": "demo-app", "scripts": {"test": "vitest run"}, "devDependencies": {"vitest": "^1.0.0"}}',
         encoding="utf-8",
     )
+    (temp_project_dir / "pnpm-lock.yaml").write_text("lockfileVersion: 5.4\n", encoding="utf-8")
     eco, fw, cmd, configs = detect_ecosystem(temp_project_dir)
     assert eco == Ecosystem.NODE
     assert fw == TestFramework.VITEST
-    assert "vitest" in cmd
-    assert "package.json" in configs
+    assert "pnpm vitest run" in cmd
+    assert "pnpm-lock.yaml" in configs
 
 
 def test_detect_rust_cargo(temp_project_dir: Path):
@@ -58,11 +67,15 @@ def test_scan_project_structure_python(temp_project_dir: Path):
     src_dir.mkdir(parents=True)
 
     (src_dir / "auth.py").write_text(
-        "class AuthService:\n"
-        "    def login(self, u, p):\n"
-        "        pass\n\n"
-        "def hash_password(p):\n"
-        "    return p\n",
+        'import os\nfrom pathlib import Path\n\n'
+        'class AuthService:\n'
+        '    """Service managing authentication."""\n'
+        '    def login(self, username: str, password: str) -> bool:\n'
+        '        """Authenticate user credentials."""\n'
+        '        return True\n\n'
+        'async def hash_password(plain: str) -> str:\n'
+        '    """Compute password hash."""\n'
+        '    return plain\n',
         encoding="utf-8",
     )
 
@@ -74,7 +87,7 @@ def test_scan_project_structure_python(temp_project_dir: Path):
     tests_dir = temp_project_dir / "tests"
     tests_dir.mkdir()
     (tests_dir / "test_auth.py").write_text(
-        "def test_login():\n    assert True\n\ndef test_hash():\n    assert True\n",
+        "from demo.auth import AuthService\n\ndef test_login():\n    assert True\n",
         encoding="utf-8",
     )
 
@@ -85,10 +98,60 @@ def test_scan_project_structure_python(temp_project_dir: Path):
     assert "AuthService" in auth_mod.classes
     assert "hash_password" in auth_mod.functions
     assert "AuthService.login" in auth_mod.functions
+    assert "os" in auth_mod.imports
+
+    # Check FunctionDetail signatures and docstrings
+    hash_fn = next(fd for fd in auth_mod.function_details if fd.name == "hash_password")
+    assert hash_fn.is_async is True
+    assert "(plain: str) -> str" in hash_fn.signature
+    assert "Compute password hash." in hash_fn.docstring
+
+    login_fn = next(fd for fd in auth_mod.function_details if fd.name == "AuthService.login")
+    assert login_fn.is_method is True
+    assert "username: str" in login_fn.signature
+    assert "Authenticate user credentials." in login_fn.docstring
 
     routes_mod = next(s for s in sources if "routes.py" in s.rel_path)
     assert routes_mod.is_route is True
 
     assert len(tests) == 1
     assert "test_login" in tests[0].test_functions
-    assert "test_hash" in tests[0].test_functions
+    assert "demo.auth" in tests[0].imported_modules
+
+
+def test_scan_project_structure_multi_lang(temp_project_dir: Path):
+    src_dir = temp_project_dir / "src"
+    src_dir.mkdir(parents=True)
+
+    # JS/TS file
+    (src_dir / "service.ts").write_text(
+        'export const fetchUser = async (id: string): Promise<User> => { return {}; };\n'
+        'export class UserService {\n  public async deleteUser(id: string) {}\n}\n',
+        encoding="utf-8",
+    )
+
+    # Go file
+    (src_dir / "handler.go").write_text(
+        'package main\n\ntype Server struct{}\n\nfunc (s *Server) HandleRequest(w ResponseWriter, r *Request) {}\n',
+        encoding="utf-8",
+    )
+
+    # Java file
+    (src_dir / "App.java").write_text(
+        'public class App {\n    public static void processOrder(int orderId) {}\n}\n',
+        encoding="utf-8",
+    )
+
+    sources, _ = scan_project_structure(temp_project_dir, Ecosystem.NODE, TestFramework.VITEST)
+
+    ts_mod = next(s for s in sources if "service.ts" in s.rel_path)
+    assert "fetchUser" in ts_mod.functions
+    assert "deleteUser" in ts_mod.functions
+    assert "UserService" in ts_mod.classes
+
+    go_mod = next(s for s in sources if "handler.go" in s.rel_path)
+    assert "Server.HandleRequest" in go_mod.functions
+
+    java_mod = next(s for s in sources if "App.java" in s.rel_path)
+    assert "App" in java_mod.classes
+    assert "processOrder" in java_mod.functions

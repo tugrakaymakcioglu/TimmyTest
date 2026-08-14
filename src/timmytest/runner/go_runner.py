@@ -1,15 +1,14 @@
-"""Go test runner using go test."""
+"""Go test runner using go test with safe execution."""
 
-import subprocess
 import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess
 
 
 class GoRunner(BaseRunner):
-    """Executes Go tests using go test ./..."""
+    """Executes Go tests using go test ./... with zero shell injection."""
 
     def can_handle(self, root_dir: Path) -> bool:
         return (root_dir / "go.mod").exists() or any(root_dir.glob("*.go"))
@@ -21,30 +20,31 @@ class GoRunner(BaseRunner):
         timeout_seconds: int = 60,
         filter_pattern: str | None = None,
     ) -> TestRunResult:
-        cmd = custom_cmd or "go test -v ./..."
-        if filter_pattern and not custom_cmd:
-            cmd = f'go test -v -run "{filter_pattern}" ./...'
+        cmd_target: list[str] | str
+        if custom_cmd:
+            cmd_target = custom_cmd
+            display_cmd = custom_cmd
+        else:
+            args = ["go", "test", "-v"]
+            if filter_pattern:
+                args.extend(["-run", filter_pattern])
+            args.append("./...")
+            cmd_target = args
+            display_cmd = " ".join(args)
 
         start_time = time.time()
-        raw_output = ""
-        exit_code = 0
+        exit_code, raw_output, is_timeout = execute_safe_subprocess(
+            cmd_target,
+            cwd=root_dir,
+            timeout_seconds=timeout_seconds,
+        )
+        duration = round(time.time() - start_time, 2)
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(root_dir),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-            )
-            raw_output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
+        if is_timeout:
             return TestRunResult(
                 ecosystem=Ecosystem.GO,
                 framework=TestFramework.GO_TEST,
-                command=cmd,
+                command=display_cmd,
                 total=0,
                 failed=1,
                 exit_code=124,
@@ -59,11 +59,7 @@ class GoRunner(BaseRunner):
                     )
                 ],
             )
-        except Exception as e:
-            raw_output = f"Execution error: {e}"
-            exit_code = 1
 
-        duration = round(time.time() - start_time, 2)
         passed, failed, skipped, failures = self._parse_go_output(raw_output)
 
         total = passed + failed + skipped
@@ -82,7 +78,7 @@ class GoRunner(BaseRunner):
         return TestRunResult(
             ecosystem=Ecosystem.GO,
             framework=TestFramework.GO_TEST,
-            command=cmd,
+            command=display_cmd,
             total=total,
             passed=passed,
             failed=failed,

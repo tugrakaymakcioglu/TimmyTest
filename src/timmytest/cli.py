@@ -1,7 +1,8 @@
-"""TimmyTest CLI entrypoint."""
+"""TimmyTest CLI entrypoint with CI exit code propagation, watch mode, and configuration support."""
 
 import contextlib
 import sys
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -17,6 +18,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 from timmytest import __version__
 from timmytest.banner import print_banner
+from timmytest.config import TimmyConfig, load_project_config
 from timmytest.detector.ecosystem import detect_ecosystem
 from timmytest.detector.gap_analyzer import analyze_test_gaps
 from timmytest.detector.models import (
@@ -49,23 +51,44 @@ app = typer.Typer(
 )
 
 
+def _get_project_mtimes(root: Path, config: TimmyConfig) -> dict[str, float]:
+    """Get modification timestamps of all tracked project files."""
+    mtimes: dict[str, float] = {}
+    for p in root.rglob("*"):
+        if p.is_file():
+            rel_parts = set(p.relative_to(root).parts)
+            if any(ign in rel_parts for ign in config.ignored_dirs):
+                continue
+            with contextlib.suppress(Exception):
+                mtimes[str(p)] = p.stat().st_mtime
+    return mtimes
+
+
 def _analyze_project(
     project_dir: Path,
     custom_cmd: str | None = None,
     execute_tests: bool = True,
     timeout_seconds: int = 60,
     filter_pattern: str | None = None,
+    config: TimmyConfig | None = None,
 ) -> ProjectAudit:
     """Core analysis orchestrator."""
     root = project_dir.resolve()
     project_name = root.name
+    cfg = config or load_project_config(root)
 
     # 1. Detect ecosystem & framework
     ecosystem, framework, default_cmd, configs = detect_ecosystem(root)
-    test_cmd = custom_cmd or default_cmd
+    test_cmd = custom_cmd or cfg.custom_test_cmd or default_cmd
 
     # 2. Scan source and test files
-    source_modules, test_modules = scan_project_structure(root, ecosystem, framework)
+    source_modules, test_modules = scan_project_structure(
+        root,
+        ecosystem,
+        framework,
+        custom_ignored_dirs=cfg.ignored_dirs,
+        custom_ignored_files=cfg.ignored_files,
+    )
 
     # 3. Analyze test gaps
     gaps, readiness_score = analyze_test_gaps(source_modules, test_modules, ecosystem, root)
@@ -87,12 +110,13 @@ def _analyze_project(
 
     # 4. Execute tests if requested
     if execute_tests and test_modules:
+        effective_timeout = timeout_seconds or cfg.timeout_seconds
         test_run = run_project_tests(
             root_dir=root,
             ecosystem=ecosystem,
             framework=framework,
-            custom_cmd=custom_cmd,
-            timeout_seconds=timeout_seconds,
+            custom_cmd=test_cmd,
+            timeout_seconds=effective_timeout,
             filter_pattern=filter_pattern,
         )
         test_run = enrich_test_failures(test_run)
@@ -156,6 +180,18 @@ def check_command(
         bool,
         typer.Option("--no-run", help="Skip running tests (static gap analysis only)"),
     ] = False,
+    safe_dry_run: Annotated[
+        bool,
+        typer.Option("--safe", "--dry-run", help="Safe mode: analyze without running tests on untrusted code"),
+    ] = False,
+    fail_under: Annotated[
+        float | None,
+        typer.Option("--fail-under", help="Minimum required test readiness score percentage (0-100)"),
+    ] = None,
+    watch: Annotated[
+        bool,
+        typer.Option("--watch", "-w", help="Watch for file changes and continuously re-audit"),
+    ] = False,
     no_banner: Annotated[
         bool,
         typer.Option("--no-banner", help="Omit ASCII banner"),
@@ -164,40 +200,75 @@ def check_command(
     """
     ⚡ Run complete audit: Scan modules, detect test gaps, run tests, diagnose failures, and generate AI prompt.
     """
-    audit = _analyze_project(
-        project_dir=path,
-        custom_cmd=cmd,
-        execute_tests=not no_run,
-        timeout_seconds=timeout,
-        filter_pattern=filter_pattern,
-    )
+    config = load_project_config(path)
+    should_run = not (no_run or safe_dry_run)
 
-    if json_output:
-        typer.echo(export_audit_to_json(audit))
-        return
+    def _execute_single_audit() -> ProjectAudit:
+        audit = _analyze_project(
+            project_dir=path,
+            custom_cmd=cmd,
+            execute_tests=should_run,
+            timeout_seconds=timeout,
+            filter_pattern=filter_pattern,
+            config=config,
+        )
 
-    if not no_banner:
-        print_banner()
+        if json_output:
+            typer.echo(export_audit_to_json(audit))
+            return audit
 
-    print_project_summary(audit.project)
-    if audit.test_run.has_executed:
-        print_test_run_summary(audit.test_run)
-        print_failures(audit.test_run)
-    print_test_gaps(audit.project)
+        if not no_banner:
+            print_banner()
 
-    copied = False
-    if copy_prompt_flag:
-        copied = copy_to_clipboard(audit.agent_prompt)
+        print_project_summary(audit.project)
+        if audit.test_run.has_executed:
+            print_test_run_summary(audit.test_run)
+            print_failures(audit.test_run)
+        print_test_gaps(audit.project)
 
-    print_prompt_panel(audit.agent_prompt, copied=copied)
+        copied = False
+        if copy_prompt_flag and config.copy_prompt:
+            copied = copy_to_clipboard(audit.agent_prompt)
 
-    if save_prompt:
-        save_prompt.write_text(audit.agent_prompt, encoding="utf-8")
-        console.print(f"[bold green]✓ AI Agent Prompt saved to:[/bold green] {save_prompt}")
+        print_prompt_panel(audit.agent_prompt, copied=copied)
 
-    if save_report:
-        save_report.write_text(audit.summary_markdown, encoding="utf-8")
-        console.print(f"[bold green]✓ Audit Report saved to:[/bold green] {save_report}")
+        if save_prompt:
+            save_prompt.write_text(audit.agent_prompt, encoding="utf-8")
+            console.print(f"[bold green]✓ AI Agent Prompt saved to:[/bold green] {save_prompt}")
+
+        if save_report:
+            save_report.write_text(audit.summary_markdown, encoding="utf-8")
+            console.print(f"[bold green]✓ Audit Report saved to:[/bold green] {save_report}")
+
+        return audit
+
+    audit = _execute_single_audit()
+
+    if watch:
+        console.print("[bold cyan]👀 Watching for file changes... (Press Ctrl+C to exit)[/bold cyan]")
+        last_mtimes = _get_project_mtimes(path.resolve(), config)
+        try:
+            while True:
+                time.sleep(config.watch_interval)
+                current_mtimes = _get_project_mtimes(path.resolve(), config)
+                if current_mtimes != last_mtimes:
+                    console.print("\n[bold yellow]🔄 File change detected. Re-running audit...[/bold yellow]\n")
+                    _execute_single_audit()
+                    last_mtimes = current_mtimes
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow]Stopping watch mode.[/bold yellow]")
+            return
+
+    # CI/CD exit code checks
+    target_score = fail_under if fail_under is not None else config.min_readiness_score
+    if target_score > 0 and audit.project.readiness_score < target_score:
+        console.print(
+            f"[bold red]❌ Test readiness score ({audit.project.readiness_score}%) is below required threshold ({target_score}%).[/bold red]"
+        )
+        raise typer.Exit(code=1)
+
+    if audit.test_run.has_executed and audit.test_run.failed > 0 and config.fail_on_test_failure:
+        raise typer.Exit(code=1)
 
 
 @app.command(name="scan")
@@ -257,6 +328,10 @@ def run_command(
         bool,
         typer.Option("--json", "-j", help="Output execution results in JSON format"),
     ] = False,
+    watch: Annotated[
+        bool,
+        typer.Option("--watch", "-w", help="Watch for file changes and continuously re-run tests"),
+    ] = False,
     no_banner: Annotated[
         bool,
         typer.Option("--no-banner", help="Omit ASCII banner"),
@@ -265,26 +340,51 @@ def run_command(
     """
     ⚡ Execute tests, parse PASS/FAIL results, and display rich failure diagnostics & fix suggestions.
     """
-    audit = _analyze_project(
-        project_dir=path,
-        custom_cmd=cmd,
-        execute_tests=True,
-        timeout_seconds=timeout,
-        filter_pattern=filter_pattern,
-    )
+    config = load_project_config(path)
 
-    if json_output:
-        typer.echo(export_audit_to_json(audit))
-        return
+    def _execute_run() -> ProjectAudit:
+        audit = _analyze_project(
+            project_dir=path,
+            custom_cmd=cmd,
+            execute_tests=True,
+            timeout_seconds=timeout,
+            filter_pattern=filter_pattern,
+            config=config,
+        )
 
-    if not no_banner:
-        print_banner()
+        if json_output:
+            typer.echo(export_audit_to_json(audit))
+            return audit
 
-    if not only_failures:
-        print_project_summary(audit.project)
-        print_test_run_summary(audit.test_run)
+        if not no_banner:
+            print_banner()
 
-    print_failures(audit.test_run)
+        if not only_failures:
+            print_project_summary(audit.project)
+            print_test_run_summary(audit.test_run)
+
+        print_failures(audit.test_run)
+        return audit
+
+    audit = _execute_run()
+
+    if watch:
+        console.print("[bold cyan]👀 Watching for file changes... (Press Ctrl+C to exit)[/bold cyan]")
+        last_mtimes = _get_project_mtimes(path.resolve(), config)
+        try:
+            while True:
+                time.sleep(config.watch_interval)
+                current_mtimes = _get_project_mtimes(path.resolve(), config)
+                if current_mtimes != last_mtimes:
+                    console.print("\n[bold yellow]🔄 File change detected. Re-running tests...[/bold yellow]\n")
+                    _execute_run()
+                    last_mtimes = current_mtimes
+        except KeyboardInterrupt:
+            console.print("\n[bold yellow]Stopping watch mode.[/bold yellow]")
+            return
+
+    if audit.test_run.has_executed and audit.test_run.failed > 0 and config.fail_on_test_failure:
+        raise typer.Exit(code=1)
 
 
 @app.command(name="prompt")
@@ -337,13 +437,13 @@ def init_command(
     ] = Path("."),
 ) -> None:
     """
-    🛠️ Initialize starter test scaffolding (tests/ directory and config) for the project.
+    🛠️ Initialize starter test scaffolding and tailored test suites for discovered modules.
     """
     audit = _analyze_project(project_dir=path, execute_tests=False)
     created = initialize_test_scaffold(audit.project, path)
 
     if created:
-        console.print("[bold green]✨ Initialized test scaffolding:[/bold green]")
+        console.print("[bold green]✨ Initialized test scaffolding & stubs:[/bold green]")
         for c in created:
             console.print(f"  [cyan]+ {c}[/cyan]")
     else:

@@ -53,6 +53,17 @@ class TestStatus(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class FunctionDetail(BaseModel):
+    """Rich metadata for a function or method."""
+
+    name: str
+    signature: str = ""
+    docstring: str = ""
+    is_async: bool = False
+    is_method: bool = False
+    line_number: int = 0
+
+
 class SourceModule(BaseModel):
     """Represents a discovered source code file."""
 
@@ -61,7 +72,9 @@ class SourceModule(BaseModel):
     language: str
     line_count: int = 0
     functions: list[str] = Field(default_factory=list)
+    function_details: list[FunctionDetail] = Field(default_factory=list)
     classes: list[str] = Field(default_factory=list)
+    imports: list[str] = Field(default_factory=list)
     is_entrypoint: bool = False
     is_utility: bool = False
     is_model: bool = False
@@ -76,6 +89,7 @@ class TestModule(BaseModel):
     abs_path: str
     framework: TestFramework = TestFramework.UNKNOWN
     test_functions: list[str] = Field(default_factory=list)
+    imported_modules: list[str] = Field(default_factory=list)
     line_count: int = 0
 
 
@@ -88,6 +102,7 @@ class TestGap(BaseModel):
     priority: Priority
     reason: str
     functions_to_test: list[str] = Field(default_factory=list)
+    function_details: list[FunctionDetail] = Field(default_factory=list)
     classes_to_test: list[str] = Field(default_factory=list)
 
 
