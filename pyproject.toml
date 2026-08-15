@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "timmytest"
-version = "1.2.0"
+version = "1.2.1"
 description = "Zero-token test runner & AST test-gap analyzer. Stop burning LLM tokens on test discovery — generate dense diagnostic prompts for Claude Code, Cursor, Codex & Antigravity."
 readme = "README.md"
 license = "Apache-2.0"

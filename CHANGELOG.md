@@ -13,6 +13,17 @@ _Nothing yet._
 
 ---
 
+## [1.2.1] - 2026-08-15
+
+### 🧠 Self-Improving Detection Registry (autonomous training)
+- **Otonom eğitim nesilleri (Gen 2–7)**: `registry/learned.yaml` gerçek açık kaynak depolarından madencilikle genişletildi. Yeni öğrenilen kurallar — hepsi bağımsız iki nesilde teyit edilip otomatik onaylandı:
+  - **Go**: `go.sum` config dosyası
+  - **Java**: `test/` dizini, Gradle `Test*.java` kalıbı
+  - **Rust**: Cargo `test_*.rs` kalıbı
+- Kayıt defteri 4 kurala ulaştı; her nesil `auto_approve` + `min_confirmations=2` politikasıyla bağımsız örneklemlerden doğrulanıyor.
+
+---
+
 ## [1.2.0] - 2026-08-14
 
 ### 🧠 Self-Improving Detection Registry

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from timmytest import __version__
 from timmytest.cli import app
 
 runner = CliRunner()
@@ -13,7 +14,7 @@ runner = CliRunner()
 def test_cli_version():
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "1.2.0" in result.output
+    assert __version__ in result.output
 
 
 def test_cli_default_invocation():

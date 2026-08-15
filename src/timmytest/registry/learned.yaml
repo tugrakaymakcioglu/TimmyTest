@@ -13,10 +13,22 @@
 # registry exactly.
 
 version: 1
-generation: 1
-generated_at: '2026-08-14T16:45:15+00:00'
-rule_count: 1
+generation: 7
+generated_at: '2026-08-15T09:22:44+00:00'
+rule_count: 4
 ecosystems:
 - id: go
   config_files:
   - go.sum
+- id: java
+  test_dirs:
+  - test
+  frameworks:
+  - id: gradle
+    test_patterns:
+    - Test*.java
+- id: rust
+  frameworks:
+  - id: cargo
+    test_patterns:
+    - test_*.rs
