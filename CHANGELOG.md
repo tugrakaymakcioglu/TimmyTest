@@ -13,6 +13,17 @@ _Nothing yet._
 
 ---
 
+## [1.3.0] - 2026-08-15
+
+### 🛡️ Detection Reliability Fix (generic-file regression)
+- **Öğrenilen `Makefile` kuralı kaldırıldı.** `learned.yaml`'da Go için bir `Makefile` config dosyası kuralı vardı; `Makefile` C/C++ projelerinde de yaygın olduğu için, öğrenilen kural bir C projesinin `Ecosystem.GO` olarak yanlış algılanmasına yol açtı (`test_detect_c_vs_cpp_disambiguation` bunu yakaladı). Kurallar geriye dönük yeniden doğrulanıp zararlı kural çıkarıldı; algılama artık yalnızca Go'nun güvenilir belirteci `go.sum` üzerinden yürüyor.
+- **Jenerik dosyaların öğrenilmesi kökten engellendi.** Eğitim tarafında iki katmanlı koruma eklendi:
+  - Hasat aşamasında `Makefile`, `makefile`, `GNUmakefile`, `CMakeLists.txt`, `meson.build`, `BUILD.bazel`, `WORKSPACE`, `README.md` gibi **dili belirtmeyen** scaffolding dosyaları artık `config_paths` kanıtına hiç toplanmıyor.
+  - Öğrenme aşamasında diskteki eski corpus'larda bu dosyalar kalsa bile `config_file` adayı olarak **asla** üretilmiyor — ikinci savunma katmanı.
+- Kayıt defteri `rule_count: 4` (Go `go.sum`; Java `test/` + Gradle `Test*.java`; Rust Cargo `test_*.rs`); tüm 188 test yeşil.
+
+---
+
 ## [1.2.1] - 2026-08-15
 
 ### 🧠 Self-Improving Detection Registry (autonomous training)

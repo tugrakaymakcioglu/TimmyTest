@@ -13,8 +13,8 @@
 # registry exactly.
 
 version: 1
-generation: 7
-generated_at: '2026-08-15T09:22:44+00:00'
+generation: 239
+generated_at: '2026-08-15T12:27:19+00:00'
 rule_count: 4
 ecosystems:
 - id: go
