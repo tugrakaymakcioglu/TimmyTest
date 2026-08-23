@@ -220,13 +220,24 @@ class NodeRunner(BaseRunner):
                 else:
                     skipped += int(number)
 
-        # Node's built-in test runner (node --test / TAP output):
-        #   # tests 2  # pass 2  # fail 0  # skipped 0  # todo 0
+        # Node's built-in test runner (node --test):
+        #   TAP reporter (older Node):  "# pass 2  # fail 0  # skipped 0"
+        #   spec reporter (Node >=20):  "ℹ tests 2  ℹ pass 2  ℹ fail 0"
+        # Both shapes mean the same thing; a parser that only knows one of
+        # them reports a fully-green suite as zero tests run.
         if passed == 0 and failed == 0:
             p_m = re.search(r"#\s*pass\s+(\d+)", output)
             f_m = re.search(r"#\s*fail\s+(\d+)", output)
             s_m = re.search(r"#\s*skipped\s+(\d+)", output)
             t_m = re.search(r"#\s*todo\s+(\d+)", output)
+            if not (p_m or f_m):
+                # Spec-reporter summary lines ("ℹ pass 2", "ℹ fail 1").
+                # The bullet is U+2139 followed by either a variant selector
+                # or a plain space, so match on the word after optional glyphs.
+                p_m = re.search(r"[ℹi]\s*pass\s+(\d+)", output)
+                f_m = re.search(r"[ℹi]\s*fail\s+(\d+)", output)
+                s_m = re.search(r"[ℹi]\s*skipped\s+(\d+)", output)
+                t_m = re.search(r"[ℹi]\s*todo\s+(\d+)", output)
             if p_m or f_m:
                 passed = int(p_m.group(1)) if p_m else 0
                 failed = int(f_m.group(1)) if f_m else 0
