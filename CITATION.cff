@@ -4,7 +4,7 @@ authors:
   - family-names: "Kaymakcioglu"
     given-names: "Tugra"
 title: "TimmyTest: Zero-Token Test Runner & AI Agent Intelligence"
-version: 0.1.0
-date-released: 2026-08-14
+version: 2.0.0
+date-released: 2026-08-15
 url: "https://github.com/tugrakaymakcioglu/TimmyTest"
 license: "Apache-2.0"

@@ -13,6 +13,45 @@ _Nothing yet._
 
 ---
 
+## [2.0.0] - 2026-08-15
+
+> **Neden major?** Koşu sonuçlarının nasıl sayıldığı, hangi dosyaların "eksik test" sayıldığı ve CI çıkış kodunun ne zaman 1 olduğu değişti. Aynı depoda v1.x'e göre farklı (ve doğru) sayılar göreceksiniz.
+
+### ⚡ Performans — tarama ~13× hızlandı
+- **Budayan dizin gezintisi.** Tarayıcı, kayıt defteri ve izleme (watch) modu artık ortak `timmytest.walk` üzerinden yürüyor: `node_modules`, `.git`, `.venv`, `dist`, `.next` gibi dizinlere **girilmeden** eleniyor. Önceki `rglob` her şeyi gezip sonra filtreliyordu. Gerçek bir Next.js deposunda tarama **13.5 sn → 0.98 sn**.
+- **Katastrofik geri izleme (ReDoS) düzeltildi.** Metot yakalayan regex `(?:public|private|protected|async|\s)+\s+…` biçimindeydi; iç içe iki niceleyici de boşluk eşlediği için tek bir 60 KB'lık React sayfası 0.38 sn sürüyordu — patolojik bir dosya taramayı tamamen kilitleyebilirdi. Satır başına sabitlenmiş, doğrusal bir kalıpla değiştirildi.
+- **Dile göre ayrıştırma.** Her dosyaya her dilin kalıpları uygulanıyordu; artık uzantıya göre dallanıyor. Hem ~5 kat daha az iş, hem de `.ts` dosyalarına PHP/Ruby/Java kurallarından sızan hayalet fonksiyonların sonu.
+- **Üretilmiş ve dev dosyalar atlanıyor.** `*.min.js`, `*.bundle.js`, `*.d.ts` ve 1.5 MB üstü dosyalar ayrıştırılmıyor.
+- **Watch modu artık bedava.** `_get_project_mtimes` yalnızca kullanıcının `ignored_dirs` listesini uyguluyordu (varsayılanı boş), yani her saniye tüm bağımlılık ağacını `stat`'lıyordu.
+- **Kayıt defteri algılaması kısa devre yapıyor.** `requires_extensions` kontrolü ve uzantı tabanlı yedek algılama, tam liste üretmek yerine ilk eşleşmede duruyor.
+
+### 🐞 Koşu raporlaması — sonuçlar 0 görünüyordu
+- **Vitest özeti artık okunuyor.** Ayrıştırıcı yalnızca Jest'in `Tests:` (iki nokta + virgül) biçimini tanıyordu; Vitest `      Tests  72 passed (72)` yazıyor. Gerçek bir Vitest projesinde 72 geçen test panele `0 pass / 1 fail` olarak yansıyordu. Artık Vitest (`|` ayraçlı), Jest, Mocha (`72 passing`) ve `node --test` TAP çıktılarının hepsi ayrıştırılıyor.
+- **Yüklenemeyen test dosyası artık görünür.** Vitest `Test Files  1 failed | 4 passed` derken testlerin hepsi yeşil olabiliyor; bu durum `errors` olarak raporlanıyor — çıkış kodu 1 iken "hepsi geçti" yazan bir tablo yerine.
+- **`skipped` + `todo` toplanıyor.** Regex alternasyonu yüzünden ikisinden yalnızca biri sayılıyordu.
+- **Alt süreçlere terminal verilmiyor (`stdin=DEVNULL`).** TTY gören bir test komutu (`npm test` → `vitest`/`jest`) izleme kipinde açılıp hiç bitmiyor, koşu zaman aşımına düşüp sahte "1 başarısız" üretiyordu; ayrıca etkileşimli bir alt süreç TUI'nin klavyesini çalabiliyordu.
+- **Zaman aşımı raporu doğruldu.** Zaman aşımı dalları `duration_seconds` alanını doldurmuyordu (panelde `0.00s`) ve o ana kadar biriken çıktıyı siliyordu; artık süre ve kısmi çıktı korunuyor, TUI kaydına ayrı bir "run timed out" satırı düşüyor.
+- **TUI koşu süresi 300 sn.** Arayüzdeki ÇALIŞTIR düğmesi CLI'nin 60 sn bütçesini kullanıyordu; soğuk bir Vite/Jest/Gradle başlangıcı tek başına bunu tüketebiliyor. Proje `timeout_seconds` belirtmişse o değer kullanılıyor.
+- **Hedefli (`--changed`) koşular gerçekten hedefleniyor.** Node koşucusu argümanları seçili test dosyalarıyla yeniden kuruyor, ama sonra ham komut dizesini çalıştırıyordu. `--` ayracı da yalnızca gerektiği yerde (`npm test -- dosya`) ekleniyor.
+
+### 🎯 Doğruluk
+- **CI çıkış kodu süit hatalarını da sayıyor.** `failed > 0` kontrolü, hiç yüklenemeyen bir test dosyasını (tüm testler yeşil, çıkış kodu 1) sessizce geçiriyordu. Artık `failed + errors`.
+- **Alt dizin projelerinde `--changed` çalışıyor.** `git diff --name-only` depo köküne göre yol veriyordu; monorepo paketi ya da `.git` altındaki herhangi bir alt proje denetlenirken hiçbir yol eşleşmiyor, seçim sessizce tüm süite düşüyordu. Artık `--relative`.
+- **git komutları askıda kalmıyor.** Tutulu bir `index.lock` denetimi süresiz bloke edebiliyordu; 30 sn zaman aşımı eklendi.
+- **Yapılandırma dosyaları eksik test sayılmıyor.** `next.config.js`, `playwright.config.ts`, `vitest.setup.js` gibi dosyalar "HIGH öncelikli testsiz modül" olarak listeleniyordu; ad ad yazılmış liste yerine kalıp tabanlı kontrol.
+- **MCP sunucusu tek doğru yoldan geçiyor.** `timmytest_check`/`scan`/`prompt` analiz mantığını elle kopyalıyor ve bu yüzden projenin `.timmytest.yml` ayarlarını (özel komut, yok sayılan dizinler, zaman aşımı) yok sayıyordu; hepsi ortak `analyze_project` üzerinden çalışıyor. Ayrıca stdio UTF-8'e sabitlendi (Türkçe yollarda çökme) ve istemciden gelen zaman aşımı 5–900 sn arasına kıstırıldı.
+- **`--save-report`/`--save-prompt` dizin oluşturuyor.** Var olmayan bir klasöre yazmak, denetimin tamamı tamamlandıktan sonra ham traceback ile patlıyordu.
+
+### 📉 Çıktı hacmi
+- **Prompt sınırlandı** (30 boşluk + 25 hata, "… ve N tane daha" notuyla). Büyük bir depoda üretilen prompt binlerce satır olabiliyor, ajan bağlam penceresini taşırıp asıl düzeltilecek hataları gömüyordu.
+- **Terminal boşluk tablosu 40 satırla sınırlı**; tam liste `--json` ve `--save-report` çıktılarında.
+- **`errors` her yerde raporlanıyor**: konsol tablosu, Markdown raporu, prompt ve MCP çıktısı. Konsol tablosuna ayrıca çıkış kodu eklendi.
+
+### 🧪 Test
+- 194 → **208 test**, tümü yeşil; `ruff` ve `mypy` temiz.
+
+---
+
 ## [1.3.0] - 2026-08-15
 
 ### 🛡️ Detection Reliability Fix (generic-file regression)
