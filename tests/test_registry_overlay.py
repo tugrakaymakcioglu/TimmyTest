@@ -38,9 +38,7 @@ def base():
 def test_patterns_are_added_to_an_existing_framework(base):
     overlay = {
         "generation": 3,
-        "ecosystems": [
-            {"id": "python", "frameworks": [{"id": "pytest", "test_patterns": ["*_test.py"]}]}
-        ],
+        "ecosystems": [{"id": "python", "frameworks": [{"id": "pytest", "test_patterns": ["*_test.py"]}]}],
     }
     merged = loader.merge_learned(base, overlay)
     pytest_fw = merged["ecosystems"][0]["frameworks"][0]
@@ -133,7 +131,9 @@ def test_a_learned_ecosystem_without_config_files_is_dropped(base):
 def test_malformed_overlays_are_ignored(base):
     assert loader.merge_learned(base, {}) is base
     assert loader.merge_learned(base, {"ecosystems": "nope"}) is base
-    assert loader.merge_learned(base, {"ecosystems": [{"no_id": 1}, "junk"]})["ecosystems"] == base["ecosystems"]
+    assert (
+        loader.merge_learned(base, {"ecosystems": [{"no_id": 1}, "junk"]})["ecosystems"] == base["ecosystems"]
+    )
 
 
 def test_the_overlay_is_skipped_when_registry_learning_is_off(tmp_path, monkeypatch):

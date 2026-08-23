@@ -1,5 +1,6 @@
 """Test Gap Analyzer - correlates source modules to test files with high precision and import verification."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, Priority, SourceModule, TestGap, TestModule
@@ -40,33 +41,75 @@ def _import_targets_module(imp: str, source: SourceModule) -> bool:
     return False
 
 
-def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) -> TestModule | None:
-    """
-    Find if a source module has a corresponding test file using exact naming,
-    relative path mirroring, or AST import verification.
-    """
-    src_path = Path(source.rel_path)
-    src_stem = src_path.stem.lower()
+@dataclass(frozen=True)
+class _PreparedTest:
+    """A test module with its name/path facts computed once.
 
+    Correlation is O(sources x tests); deriving the same stems and parent-name
+    sets from scratch inside that loop meant re-parsing every test path once per
+    source file - thousands of redundant ``Path`` builds on a normal repo.
+    """
+
+    module: TestModule
+    stem: str
+    clean_stem: str
+    parent_names: frozenset[str]
+    usable: bool
+
+
+def _prepare_tests(test_modules: list[TestModule]) -> list[_PreparedTest]:
+    prepared: list[_PreparedTest] = []
     for test in test_modules:
         test_path = Path(test.rel_path)
-        test_stem = test_path.stem.lower()
-        test_clean_stem = (
-            test_stem.removeprefix("test_")
+        stem = test_path.stem.lower()
+        clean_stem = (
+            stem.removeprefix("test_")
             .removesuffix("_test")
             .removesuffix(".test")
             .removesuffix(".spec")
             .removesuffix("_spec")
         )
-
         # A file picked up only because it sits inside a test directory, whose
         # name carries no test marker and which declares no test functions, is a
         # fixture or helper. `tests/helpers.py` must not be accepted as the test
         # suite for `src/helpers.py`. The name check keeps this safe for the
         # languages whose test functions the scanner cannot parse.
-        named_like_test = "test" in test_stem or "spec" in test_stem
-        if not test.test_functions and not named_like_test:
+        named_like_test = "test" in stem or "spec" in stem
+        prepared.append(
+            _PreparedTest(
+                module=test,
+                stem=stem,
+                clean_stem=clean_stem,
+                parent_names=frozenset(p.lower() for p in test_path.parts[:-1]),
+                usable=bool(test.test_functions) or named_like_test,
+            )
+        )
+    return prepared
+
+
+def _find_matching_test(
+    source: SourceModule,
+    test_modules: list[TestModule],
+    prepared: list[_PreparedTest] | None = None,
+) -> TestModule | None:
+    """
+    Find if a source module has a corresponding test file using exact naming,
+    relative path mirroring, or AST import verification.
+
+    ``prepared`` lets a caller correlating many sources hoist the per-test
+    derivation out of its loop; it is computed on demand otherwise.
+    """
+    src_path = Path(source.rel_path)
+    src_stem = src_path.stem.lower()
+    src_stem_parts = src_stem.split("_")
+    src_parent_names = {p.lower() for p in src_path.parts[:-1]}
+
+    for entry in prepared if prepared is not None else _prepare_tests(test_modules):
+        if not entry.usable:
             continue
+
+        test_stem = entry.stem
+        test_clean_stem = entry.clean_stem
 
         # 1. Exact stem match: e.g. test_auth.py or auth_test.py or auth.test.ts matches auth.py
         if (
@@ -78,18 +121,17 @@ def _find_matching_test(source: SourceModule, test_modules: list[TestModule]) ->
             or test_stem == src_stem
             or test_clean_stem == src_stem
         ):
-            return test
+            return entry.module
 
         # 2. Path mirroring match: e.g. src/api/user.py -> tests/api/test_user.py
-        if src_stem in test_clean_stem.split("_") or test_clean_stem in src_stem.split("_"):
-            src_parent_names = {p.lower() for p in src_path.parts[:-1]}
-            test_parent_names = {p.lower() for p in test_path.parts[:-1]}
-            if src_parent_names.intersection(test_parent_names) - {"src", "lib", "app"}:
-                return test
+        if (
+            src_stem in test_clean_stem.split("_") or test_clean_stem in src_stem_parts
+        ) and src_parent_names.intersection(entry.parent_names) - {"src", "lib", "app"}:
+            return entry.module
 
         # 3. Import verification: check if test imports this exact module
-        if any(_import_targets_module(imp, source) for imp in test.imported_modules):
-            return test
+        if any(_import_targets_module(imp, source) for imp in entry.module.imported_modules):
+            return entry.module
 
     return None
 
@@ -142,9 +184,7 @@ def analyze_test_gaps(
     """
     gaps: list[TestGap] = []
     has_tests_dir = (
-        (root_dir / "tests").is_dir()
-        or (root_dir / "__tests__").is_dir()
-        or (root_dir / "spec").is_dir()
+        (root_dir / "tests").is_dir() or (root_dir / "__tests__").is_dir() or (root_dir / "spec").is_dir()
     )
 
     covered_count = 0
@@ -153,8 +193,10 @@ def analyze_test_gaps(
     if total_sources == 0:
         return [], 100.0
 
+    prepared_tests = _prepare_tests(test_modules)
+
     for src in source_modules:
-        matching_test = _find_matching_test(src, test_modules)
+        matching_test = _find_matching_test(src, test_modules, prepared_tests)
         if matching_test:
             covered_count += 1
         else:

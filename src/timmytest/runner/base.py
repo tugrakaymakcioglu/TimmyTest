@@ -104,6 +104,11 @@ def execute_safe_subprocess(
         proc = subprocess.Popen(
             args,
             cwd=str(cwd),
+            # No inherited terminal: a test runner that sees a TTY on stdin
+            # starts in watch mode and never exits (the run then dies on the
+            # timeout and reports a bogus "1 failed"), and an interactive child
+            # would otherwise steal keystrokes from the TUI.
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

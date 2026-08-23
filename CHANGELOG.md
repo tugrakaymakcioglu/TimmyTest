@@ -9,7 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### 🐞 Düzeltmeler (denetim: canlı uçtan uca doğrulama)
+
+- **PATH'te olmayan `pytest` komutu artık akıllı çözümleyiciye düşüyor.** Kayıt
+  defterinin önerdiği `pytest -ra`, global bir pytest kurulumu varsayıyor;
+  makinede yoksa süreç hiç başlamıyor (WinError 2 / FileNotFoundError) ve her
+  koşu sahte bir "Collection/Setup Error" ile bitiyordu. Artık çözülemeyen
+  komut, uv/poetry/pdm/proje venv/`python -m pytest` zincirine düşüyor.
+  Proje-göreli yollar (`.venv/bin/pytest`) olduğu gibi kullanılmaya devam eder.
+- **Boş `--changed` seçimi artık "hiçbir şey çalıştırma" demek.** Git farkı
+  etkilenen test üretmediğinde kod tüm süiti çalıştırıyordu - bayrağın varlık
+  sebebini tam tersine çeviriyordu. Temiz ağaçta koşu atlanıyor.
+- **Büyük harfli uzantılar taranmıyordu.** `UTIL.PY`, `Main.C` gibi dosyalar
+  büyük/küçük harfe duyarlı uzantı karşılaştırması yüzünden modül olarak
+  görünmüyor, test açığı da üretilmiyordu. Uzantı eşleşmesi case-insensitive.
+- **`pytest -q` çıktısı ayrıştırılamıyordu.** Sessiz mod özeti (`2 passed in
+  0.01s`) `=` çerçevesi ve durum satırları içermediği için yeşil bir koşu
+  "0 total" raporlanıyordu. Çıplak özet satırı için ikincil desen eklendi.
+- **`prompt --output` üst klasörü oluşturuyor ve yazma hatalarını düzgün
+  bildiriyor.** Var olmayan dizine yazmak denetim bittikten sonra traceback
+  ile patlıyordu; `check --save-prompt` ile aynı davranışa getirildi.
+- **Vitest başarısızlık isimlerinde `(1 ms)` süresi temizleniyor.** Süre
+  biriminden önce boşluk olduğunda parantezli biçim silinmiyor, sahte test
+  adı olarak listeleniyordu.
+
+### 🧪 Testler
+
+- Regresyon kapsamı: sessiz-mod pytest ayrıştırma, çözülemeyen komut
+  geri düşüşü, boş `--changed` seçimi, büyük harfli uzantılar, Vitest süre
+  temizleme (5 yeni test). Süit: 213 test, tümü yeşil.
 
 ---
 

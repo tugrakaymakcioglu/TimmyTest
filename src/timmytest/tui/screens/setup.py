@@ -147,7 +147,9 @@ class SetupScreen(TimmyScreen):
                 label_style = "#484f58"
             else:
                 glyph = Text(GLYPHS[result.level], style=f"bold {COLOURS[result.level]}")
-                detail = Text(result.detail, style=COLOURS[result.level] if result.level is not Level.OK else "#8b949e")
+                detail = Text(
+                    result.detail, style=COLOURS[result.level] if result.level is not Level.OK else "#8b949e"
+                )
                 label_style = "#c9d1d9"
             table.add_row(glyph, Text(check.label, style=label_style), detail)
 

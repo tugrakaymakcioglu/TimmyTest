@@ -81,6 +81,20 @@ def test_get_changed_files_since_ref(tmp_path):
     assert "a.txt" in changed
 
 
+def test_get_changed_files_are_relative_to_the_audited_directory(tmp_path):
+    """A project nested below its .git must get paths it can actually match."""
+    _init_git_repo(tmp_path)
+    package = tmp_path / "packages" / "api"
+    package.mkdir(parents=True)
+    (package / "service.py").write_text("def call():\n    return 1\n", encoding="utf-8")
+
+    changed = get_changed_files(package)
+
+    # Relative to the package, not to the repository root.
+    assert "service.py" in changed
+    assert "packages/api/service.py" not in changed
+
+
 def test_get_changed_files_raises_outside_repo(tmp_path):
     with pytest.raises(NotAGitRepositoryError):
         get_changed_files(tmp_path)

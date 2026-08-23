@@ -7,11 +7,21 @@ zero-token signature extraction.
 
 from timmytest.detector.models import Priority, ProjectInfo, TestRunResult
 
+#: A prompt is a working instruction, not a database dump. On a large codebase
+#: the unbounded version emitted every gap - hundreds of modules, thousands of
+#: lines - which blows past agent context windows and buries the failures the
+#: agent is supposed to fix first. Gaps arrive highest-priority first, so the
+#: cut always keeps the work that matters.
+MAX_PROMPT_GAPS = 30
+MAX_PROMPT_FAILURES = 25
+
 
 def generate_agent_prompt(
     project: ProjectInfo,
     test_run: TestRunResult,
     max_trace_lines: int = 8,
+    max_gaps: int = MAX_PROMPT_GAPS,
+    max_failures: int = MAX_PROMPT_FAILURES,
 ) -> str:
     """
     Constructs an ultra-dense, actionable prompt for an AI agent with function signatures
@@ -27,8 +37,10 @@ def generate_agent_prompt(
 
     if test_run.has_executed:
         pass_rate = round((test_run.passed / test_run.total) * 100, 1) if test_run.total > 0 else 0.0
+        error_part = f", {test_run.errors} Suite Errors" if test_run.errors else ""
         lines.append(
-            f"**Test Results**: {test_run.passed} Passed, {test_run.failed} Failed, {test_run.skipped} Skipped "
+            f"**Test Results**: {test_run.passed} Passed, {test_run.failed} Failed{error_part}, "
+            f"{test_run.skipped} Skipped "
             f"({pass_rate}% Pass Rate) | Test Readiness Score: {project.readiness_score}%"
         )
     else:
@@ -42,8 +54,9 @@ def generate_agent_prompt(
 
     # Section 1: Failing Tests
     if test_run.failures:
+        shown_failures = test_run.failures[:max_failures]
         lines.append(f"#### ❌ Failing Tests ({len(test_run.failures)})")
-        for idx, fail in enumerate(test_run.failures, start=1):
+        for idx, fail in enumerate(shown_failures, start=1):
             location_str = (
                 f" (`{fail.file_path}:{fail.line_number}`)" if fail.file_path and fail.line_number else ""
             )
@@ -63,6 +76,9 @@ def generate_agent_prompt(
                 for tbl in tb_lines:
                     lines.append(f"     {tbl}")
                 lines.append("     ```")
+        remaining = len(test_run.failures) - len(shown_failures)
+        if remaining > 0:
+            lines.append(f"_… and {remaining} further failure(s); fix these first, then re-run._")
         lines.append("")
     elif test_run.has_executed and test_run.failed == 0:
         lines.append("#### ✅ Existing Tests: All Passing (0 Failures)")
@@ -70,8 +86,9 @@ def generate_agent_prompt(
 
     # Section 2: Missing Test Modules / Test Gaps with Signatures
     if project.test_gaps:
+        shown_gaps = project.test_gaps[:max_gaps]
         lines.append(f"#### ⚠️ Missing Test Modules & Gaps ({len(project.test_gaps)})")
-        for idx, gap in enumerate(project.test_gaps, start=1):
+        for idx, gap in enumerate(shown_gaps, start=1):
             badge = f"[{gap.priority.value}]"
 
             lines.append(
@@ -92,6 +109,12 @@ def generate_agent_prompt(
             elif gap.functions_to_test:
                 lines.append(f"   - **Functions to Test**: `{', '.join(gap.functions_to_test[:5])}`")
 
+        remaining_gaps = len(project.test_gaps) - len(shown_gaps)
+        if remaining_gaps > 0:
+            lines.append(
+                f"_… and {remaining_gaps} more untested module(s) of lower priority. "
+                f"Run `timmytest scan --json` for the full list._"
+            )
         lines.append("")
 
     # Section 3: Direct Action Items for AI Agent

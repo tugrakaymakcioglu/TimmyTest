@@ -459,4 +459,3 @@ def test_quit_shortcuts_and_buttons(tmp_path, monkeypatch):
             assert app.is_running
 
     asyncio.run(dash_exit_ws_scenario())
-

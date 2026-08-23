@@ -83,7 +83,9 @@ class DashboardScreen(TimmyScreen):
         sidebar.clear_options()
         options: list[Option] = []
         for group in enabled_groups():
-            options.append(Option(Text(f" {self.t(group.label_key)}", style=f"bold {group.accent}"), disabled=True))
+            options.append(
+                Option(Text(f" {self.t(group.label_key)}", style=f"bold {group.accent}"), disabled=True)
+            )
             for feature in group.features:
                 label = Text()
                 label.append(f"  {feature.icon}  ", style=group.accent)
@@ -108,7 +110,9 @@ class DashboardScreen(TimmyScreen):
         title.append("\n")
         if audit is not None:
             run = audit.test_run
-            title.append(f"{audit.project.ecosystem.value}·{audit.project.test_framework.value}   ", style=ACCENT)
+            title.append(
+                f"{audit.project.ecosystem.value}·{audit.project.test_framework.value}   ", style=ACCENT
+            )
             title.append(f"{run.passed} ", style=PASS)
             title.append("pass  ", style=MUTED)
             title.append(f"{run.failed + run.errors} ", style=FAIL)

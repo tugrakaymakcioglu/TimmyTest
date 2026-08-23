@@ -16,6 +16,10 @@ if hasattr(sys.stdout, "reconfigure"):
 
 console = Console(legacy_windows=False)
 
+#: Terminal tables are for triage, not for archives - the full list lives in the
+#: JSON export and the Markdown report.
+MAX_CONSOLE_GAPS = 40
+
 
 def print_project_summary(project: ProjectInfo) -> None:
     """Print the detected project summary table."""
@@ -52,13 +56,18 @@ def print_test_run_summary(test_run: TestRunResult) -> None:
     total_color = "white"
     pass_color = "green" if test_run.passed > 0 else "white"
     fail_color = "bold red" if test_run.failed > 0 else "dim green"
+    error_color = "bold red" if test_run.errors > 0 else "dim green"
     skip_color = "yellow" if test_run.skipped > 0 else "dim white"
 
     table.add_row("Total Tests", f"[{total_color}]{test_run.total}[/{total_color}]")
     table.add_row("Passed", f"[{pass_color}]{test_run.passed}[/{pass_color}]")
     table.add_row("Failed", f"[{fail_color}]{test_run.failed}[/{fail_color}]")
+    # Suites that never loaded (collection/import errors) are not test failures
+    # but still make the run untrustworthy, so they get their own line.
+    table.add_row("Errors (suite/setup)", f"[{error_color}]{test_run.errors}[/{error_color}]")
     table.add_row("Skipped / Ignored", f"[{skip_color}]{test_run.skipped}[/{skip_color}]")
     table.add_row("Duration", f"{test_run.duration_seconds}s")
+    table.add_row("Exit Code", f"{test_run.exit_code}")
     table.add_row("Executed Command", f"[dim cyan]{test_run.command}[/dim cyan]")
 
     console.print(table)
@@ -68,7 +77,7 @@ def print_test_run_summary(test_run: TestRunResult) -> None:
 def print_failures(test_run: TestRunResult) -> None:
     """Print detailed failure diagnostics and suggestions."""
     if not test_run.failures:
-        if test_run.has_executed and test_run.failed == 0:
+        if test_run.has_executed and test_run.failed == 0 and test_run.errors == 0:
             console.print(
                 Panel(
                     "[bold green]✨ All executed tests passed cleanly! No test failures detected.[/bold green]",
@@ -111,7 +120,9 @@ def print_failures(test_run: TestRunResult) -> None:
 
 def print_coverage_summary(coverage: CoverageReport) -> None:
     """Print a coverage report summary with the worst-covered files."""
-    score_color = "green" if coverage.total_percent >= 80 else ("yellow" if coverage.total_percent >= 50 else "red")
+    score_color = (
+        "green" if coverage.total_percent >= 80 else ("yellow" if coverage.total_percent >= 50 else "red")
+    )
 
     table = Table(
         title=f"🧪 Test Coverage ({coverage.source})",
@@ -163,7 +174,7 @@ def print_test_gaps(project: ProjectInfo) -> None:
     table.add_column("Suggested Test File", style="green", width=35)
     table.add_column("Reason / Coverage Target", style="white")
 
-    for gap in project.test_gaps:
+    for gap in project.test_gaps[:MAX_CONSOLE_GAPS]:
         p_style = (
             "bold red"
             if gap.priority == Priority.HIGH
@@ -177,6 +188,14 @@ def print_test_gaps(project: ProjectInfo) -> None:
         )
 
     console.print(table)
+    # Gaps are sorted highest-priority first, so the truncated tail is the least
+    # urgent work. Scrolling 200+ rows off the top of the terminal helped nobody.
+    hidden = len(project.test_gaps) - MAX_CONSOLE_GAPS
+    if hidden > 0:
+        console.print(
+            f"[dim]… and {hidden} more, lowest priority last. "
+            f"Use --json or --save-report for the complete list.[/dim]"
+        )
     console.print("")
 
 

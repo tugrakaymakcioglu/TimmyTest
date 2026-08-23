@@ -1,4 +1,4 @@
-﻿"""Sidebar feature registry for the dashboard.
+"""Sidebar feature registry for the dashboard.
 
 Icons are deliberately limited to glyphs that every common terminal font ships
 (the CP437 / geometric-shapes corner of Unicode). Anything more exotic risks

@@ -220,11 +220,7 @@ class WorkspaceFormScreen(TimmyScreen):
             self.action_back()
 
     def _selected_vendors(self) -> list[str]:
-        return [
-            code
-            for code, _ in AI_VENDORS
-            if self.query_one(f"#vendor-{code}", Checkbox).value
-        ]
+        return [code for code, _ in AI_VENDORS if self.query_one(f"#vendor-{code}", Checkbox).value]
 
     def action_create(self) -> None:
         error = self.query_one("#form-error", Static)

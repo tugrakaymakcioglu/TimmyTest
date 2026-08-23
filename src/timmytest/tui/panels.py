@@ -141,9 +141,7 @@ class Panels:
             Static(body),
         ]
         if len([h for h in history if h.has_data]) > 1:
-            widgets.append(
-                Static(charts.section(self.t("p.history"), charts.history_chart(history)))
-            )
+            widgets.append(Static(charts.section(self.t("p.history"), charts.history_chart(history))))
         return widgets
 
     def panel_results(self) -> list[Widget]:
@@ -226,7 +224,10 @@ class Panels:
         for failure in failures[:40]:
             body = charts.kv_table(
                 [
-                    (self.t("p.file"), Text(f"{failure.file_path}:{failure.line_number or '?'}", style=CREAM)),
+                    (
+                        self.t("p.file"),
+                        Text(f"{failure.file_path}:{failure.line_number or '?'}", style=CREAM),
+                    ),
                     (self.t("p.error"), Text(f"{failure.error_type}: {failure.message}", style=FAIL)),
                     (self.t("p.suggestion"), Text(failure.suggested_fix or "—", style=PASS)),
                 ]
@@ -257,7 +258,9 @@ class Panels:
                 Text(str(len(module.classes))),
             )
         return [
-            _heading(self.t("f.modules"), f"{project.total_source_files} source · {project.total_test_files} test"),
+            _heading(
+                self.t("f.modules"), f"{project.total_source_files} source · {project.total_test_files} test"
+            ),
             Static(table),
         ]
 
@@ -410,9 +413,7 @@ class Panels:
         current = self.screen.timmy.prompt_variant
         widgets: list[Widget] = [_heading(self.t("f.prompt_style"))]
         for key, label in PROMPT_VARIANTS:
-            widgets.append(
-                Checkbox(label, value=key == current, id=f"variant-{key}", classes="variant-box")
-            )
+            widgets.append(Checkbox(label, value=key == current, id=f"variant-{key}", classes="variant-box"))
         widgets.append(Static(id="act-variant-status"))
         return widgets
 
@@ -492,7 +493,10 @@ class Panels:
         workspace = self.workspace
         configured = bool(workspace and workspace.webhook)
         rows: list[tuple[str, RenderableType]] = [
-            ("webhook", Text("configured" if configured else "not configured", style=PASS if configured else MUTED)),
+            (
+                "webhook",
+                Text("configured" if configured else "not configured", style=PASS if configured else MUTED),
+            ),
             (
                 "rules",
                 Text(
@@ -611,7 +615,9 @@ class Panels:
         return [
             _heading(self.t("f.tools_report")),
             Input(value=default, id="act-report-path"),
-            Horizontal(Button(self.t("p.save"), id="act-export-report", variant="success"), classes="actions"),
+            Horizontal(
+                Button(self.t("p.save"), id="act-export-report", variant="success"), classes="actions"
+            ),
             Static(id="act-report-status"),
         ]
 
@@ -641,8 +647,12 @@ class Panels:
         return [
             _heading(self.t("f.settings_language")),
             Horizontal(
-                Button("Türkçe", id="act-lang-tr", variant="primary" if self.t.language == "tr" else "default"),
-                Button("English", id="act-lang-en", variant="primary" if self.t.language == "en" else "default"),
+                Button(
+                    "Türkçe", id="act-lang-tr", variant="primary" if self.t.language == "tr" else "default"
+                ),
+                Button(
+                    "English", id="act-lang-en", variant="primary" if self.t.language == "en" else "default"
+                ),
                 classes="actions",
             ),
             Static(id="act-lang-status"),
@@ -684,7 +694,9 @@ class Panels:
                     classes="actions",
                 )
             )
-        widgets.append(Horizontal(Button(self.t("ws.create"), id="act-ws-new", variant="success"), classes="actions"))
+        widgets.append(
+            Horizontal(Button(self.t("ws.create"), id="act-ws-new", variant="success"), classes="actions")
+        )
         widgets.append(Static(id="act-ws-status"))
         return widgets
 

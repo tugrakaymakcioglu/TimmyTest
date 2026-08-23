@@ -91,10 +91,21 @@ def analyze_project(
     if (changed or since) and effective_test_paths is None:
         from timmytest.git_changed import get_affected_test_paths
 
-        effective_test_paths = get_affected_test_paths(root, source_modules, test_modules, ref=since)
+        affected = get_affected_test_paths(root, source_modules, test_modules, ref=since)
+        # Empty selection is meaningful, not a signal to fall back to the whole
+        # suite: `--changed` promises "run what my diff touched", so a clean
+        # tree must skip execution entirely - the previous fallback re-ran
+        # everything, the exact cost the flag exists to avoid.
+        if not affected:
+            execute_tests = False
+            effective_test_paths = []
+        else:
+            effective_test_paths = affected
 
     # 3b. Coverage-aware analysis (optional): parse a coverage report and enrich gaps.
-    coverage_report = parse_coverage_report(root, coverage_path) if (coverage or coverage_path is not None) else None
+    coverage_report = (
+        parse_coverage_report(root, coverage_path) if (coverage or coverage_path is not None) else None
+    )
     if coverage_report is not None:
         gaps = _enrich_gaps_with_coverage(gaps, coverage_report, coverage_threshold)
 

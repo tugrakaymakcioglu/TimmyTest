@@ -65,16 +65,38 @@ class PythonRunner(BaseRunner):
         test_paths: list[str] | None = None,
     ) -> TestRunResult:
         cmd_target: list[str] | str
-        if custom_cmd:
+
+        # The registry's recommended command (e.g. `pytest -ra`) presumes a
+        # globally visible pytest. When it is not resolvable - no global install,
+        # no active venv - spawning it dies with WinError 2 / FileNotFoundError
+        # and every run reports a bogus collection error. Falling back to the
+        # smart resolver below (uv/poetry/pdm/project venv/`sys.executable -m`)
+        # turns that dead end into the run the user wanted. The executed-command
+        # line always shows what actually ran, so nothing happens silently.
+        resolved_custom = custom_cmd
+        if resolved_custom:
+            parts = split_command(resolved_custom)
+            if parts:
+                head = Path(parts[0])
+                # Resolvable = global PATH hit, a filesystem path as given, or
+                # a path relative to the audited project (`.venv/bin/pytest`
+                # style commands are written from the project's viewpoint).
+                resolvable = (
+                    shutil.which(parts[0]) is not None or head.is_file() or (root_dir / head).is_file()
+                )
+                if not resolvable:
+                    resolved_custom = None
+
+        if resolved_custom:
             if test_paths:
                 # Append targeted test files to an explicit command (e.g. "pytest -ra").
-                parts = split_command(custom_cmd)
+                parts = split_command(resolved_custom)
                 parts.extend(test_paths)
                 cmd_target = parts
                 display_cmd = " ".join(parts)
             else:
-                cmd_target = custom_cmd
-                display_cmd = custom_cmd
+                cmd_target = resolved_custom
+                display_cmd = resolved_custom
         else:
             cmd_args = self._find_runner_args(root_dir, filter_pattern)
             if test_paths:
@@ -107,14 +129,16 @@ class PythonRunner(BaseRunner):
                 command=display_cmd,
                 total=0,
                 failed=1,
+                duration_seconds=duration,
                 exit_code=124,
-                raw_output=f"Test execution timed out after {timeout_seconds} seconds.",
+                raw_output=f"Test execution timed out after {timeout_seconds} seconds.\n\n{raw_output}",
                 has_executed=True,
                 failures=[
                     FailureDetail(
                         test_name="Timeout",
                         error_type="TimeoutError",
                         message=f"Test run exceeded {timeout_seconds}s limit",
+                        traceback=raw_output[-1000:],
                         suggested_fix="Check for infinite loops or increase timeout via --timeout",
                     )
                 ],
@@ -176,6 +200,14 @@ class PythonRunner(BaseRunner):
 
         # Summary line fallback e.g. "= 2 failed, 8 passed, 1 skipped in 0.12s ="
         summary_match = re.search(r"=+\s*(.+?)\s*in\s+[\d\.]+s\s*=+", output)
+        if not summary_match:
+            # Quiet mode (`pytest -q`) prints a bare "2 passed in 0.01s" with no
+            # `=` frame and no per-test status lines, so the two parsers above
+            # both came up empty and an all-green run was reported as
+            # "0 total, exit 0" - or worse, as a collection error.
+            summary_match = re.search(
+                r"^\s*(.+?\bpass(?:ed)?\b.*?)\s*in\s+[\d\.]+s\s*$", output, re.MULTILINE
+            )
         if summary_match:
             summary_text = summary_match.group(1)
             p_m = re.search(r"(\d+)\s+passed", summary_text)

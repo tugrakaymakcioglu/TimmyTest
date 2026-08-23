@@ -16,6 +16,8 @@ from typing import Any
 
 import yaml
 
+from timmytest.walk import has_file_with_extension
+
 _REGISTRY_PATH = Path(__file__).parent / "ecosystems.yaml"
 _LEARNED_PATH = Path(__file__).parent / "learned.yaml"
 
@@ -248,9 +250,10 @@ def detect_from_registry(root: Path) -> tuple[str, str, str, list[str]]:
 
         # Extension gate: for ecosystems whose config files are ambiguous
         # (e.g. C vs C++ share Makefile/CMakeLists.txt), require at least one
-        # source file with a distinguishing extension.
+        # source file with a distinguishing extension. The check short-circuits
+        # on the first hit and never enters dependency directories.
         req_exts = eco.get("requires_extensions")
-        if req_exts and not any(list(root.rglob(f"*{ext}")) for ext in req_exts):
+        if req_exts and not has_file_with_extension(root, req_exts):
             continue
 
         pkg = _read_package_json(root)
@@ -265,12 +268,10 @@ def detect_from_registry(root: Path) -> tuple[str, str, str, list[str]]:
         )
 
     # Fallback: no config file matched — sniff by source file extensions.
-    py_files = list(root.glob("**/*.py"))
-    if py_files:
+    if has_file_with_extension(root, [".py"]):
         return "python", "pytest", "pytest -ra", []
 
-    js_files = list(root.glob("**/*.js")) + list(root.glob("**/*.ts"))
-    if js_files:
+    if has_file_with_extension(root, [".js", ".ts"]):
         return "node", "custom", "npm test", []
 
     return "unknown", "unknown", "", []

@@ -11,6 +11,7 @@ from textual import work
 from textual.app import App
 
 from timmytest.analysis import analyze_project
+from timmytest.config import load_project_config
 from timmytest.detector.models import ProjectAudit
 from timmytest.tui.i18n import Translator
 from timmytest.tui.screens.dashboard import DashboardScreen
@@ -26,6 +27,11 @@ from timmytest.tui.screens.workspace import (
 from timmytest.tui.state import AppState, RunSnapshot, Workspace, utc_now
 
 MAX_ACTIVITY = 500
+
+# The CLI defaults to a 60s run because it is invoked per-command; the UI runs a
+# whole suite from a button press, and a cold Vite/Jest/Gradle start alone can
+# eat that budget - which surfaced as a fake "1 failed" instead of a result.
+UI_RUN_TIMEOUT = 300
 
 
 class TimmyApp(App[None]):
@@ -139,12 +145,29 @@ class TimmyApp(App[None]):
         self.log_activity(f"run started: {workspace.path}")
         self._run_analysis(workspace, done)
 
+    @staticmethod
+    def _run_timeout(root: Path) -> int:
+        """Seconds to allow the suite: the project's own setting, else the UI default."""
+        try:
+            config = load_project_config(root)
+        except Exception:
+            return UI_RUN_TIMEOUT
+        # Only an explicitly configured value overrides the UI default; the
+        # config object's own fallback is the CLI's 60s, which is too tight here.
+        if "timeout_seconds" in config.model_fields_set:
+            return config.timeout_seconds
+        return UI_RUN_TIMEOUT
+
     @work(thread=True, exclusive=True, group="analysis")
     def _run_analysis(self, workspace: Workspace, done: Callable[[str | None], None]) -> None:
         audit: ProjectAudit | None = None
         error: str | None = None
         try:
-            audit = analyze_project(workspace.root, execute_tests=True)
+            audit = analyze_project(
+                workspace.root,
+                execute_tests=True,
+                timeout_seconds=self._run_timeout(workspace.root),
+            )
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
         self.call_from_thread(self._finish_analysis, workspace, audit, error, done)
@@ -164,6 +187,9 @@ class TimmyApp(App[None]):
             workspace.record(_snapshot(audit))
             self.state.save()
             run = audit.test_run
+            if run.exit_code == 124:
+                # Without this the timeout is indistinguishable from "1 test failed".
+                self.log_activity(f"run timed out after {run.duration_seconds:.0f}s — no results parsed")
             self.log_activity(
                 f"run finished: {run.passed} pass / {run.failed + run.errors} fail / "
                 f"{len(audit.project.test_gaps)} missing"

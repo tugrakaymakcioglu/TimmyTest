@@ -111,7 +111,12 @@ def _clear_background_pockets(rgb: Image.Image, alpha: Image.Image) -> None:
                 pocket.append((x, y))
                 for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
                     inside = 0 <= nx < w and 0 <= ny < h
-                    if inside and not seen[ny * w + nx] and alpha_px[nx, ny] and looks_like_background(nx, ny):
+                    if (
+                        inside
+                        and not seen[ny * w + nx]
+                        and alpha_px[nx, ny]
+                        and looks_like_background(nx, ny)
+                    ):
                         seen[ny * w + nx] = 1
                         stack.append((nx, ny))
             if len(pocket) >= BG_POCKET_MIN_AREA:
@@ -182,8 +187,12 @@ def build_logo(wordmark: Image.Image) -> Image.Image:
     teal_t = crop_content(wordmark.crop((int(w * 0.02), int(h * 0.47), int(w * 0.23), int(h * 1.0))))
 
     height = min(red_t.height, teal_t.height)
-    red_t = red_t.resize((max(1, round(red_t.width * height / red_t.height)), height), Image.Resampling.LANCZOS)
-    teal_t = teal_t.resize((max(1, round(teal_t.width * height / teal_t.height)), height), Image.Resampling.LANCZOS)
+    red_t = red_t.resize(
+        (max(1, round(red_t.width * height / red_t.height)), height), Image.Resampling.LANCZOS
+    )
+    teal_t = teal_t.resize(
+        (max(1, round(teal_t.width * height / teal_t.height)), height), Image.Resampling.LANCZOS
+    )
 
     gap = max(1, height // 12)
     canvas = Image.new("RGBA", (red_t.width + teal_t.width + gap, height), (0, 0, 0, 0))

@@ -2,8 +2,10 @@
 
 import ast
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
+from timmytest import walk
 from timmytest.detector.models import (
     Ecosystem,
     FunctionDetail,
@@ -12,31 +14,8 @@ from timmytest.detector.models import (
     TestModule,
 )
 
-IGNORED_DIRS = {
-    ".git",
-    ".github",
-    ".venv",
-    "venv",
-    "env",
-    "node_modules",
-    "dist",
-    "build",
-    "target",
-    "bin",
-    "obj",
-    "vendor",
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".coverage",
-    "htmlcov",
-    ".idea",
-    ".vscode",
-    ".turbo",
-    ".next",
-    ".nuxt",
-}
+#: Re-exported for callers that have always imported it from here.
+IGNORED_DIRS = walk.IGNORED_DIRS
 
 IGNORED_FILES = {
     "__init__.py",
@@ -50,8 +29,73 @@ IGNORED_FILES = {
     "postcss.config.js",
 }
 
+# Tooling config is not application code. Listing it by exact filename only ever
+# covered a handful of spellings, so `next.config.js`, `playwright.config.ts` and
+# `vitest.setup.js` were reported as HIGH-priority untested modules - advice no
+# one can act on, and it inflates the gap count.
+_CONFIG_EXTENSIONS = {"js", "cjs", "mjs", "jsx", "ts", "cts", "mts", "tsx"}
+_CONFIG_STEMS = {"babel", "gulpfile", "gruntfile", "webpack", "rollup", "commitlint", "lint-staged"}
+
+
+def _is_tooling_config(name: str) -> bool:
+    """True for build/tool configuration files such as ``next.config.js``."""
+    stem, dot, extension = name.lower().rpartition(".")
+    if not dot or extension not in _CONFIG_EXTENSIONS:
+        return False
+    return stem.endswith(".config") or stem.endswith(".setup") or stem in _CONFIG_STEMS
+
 
 TEST_DIR_NAMES = {"tests", "test", "__tests__", "spec", "specs"}
+
+#: Files above this size are bundles, vendored blobs or generated artefacts, not
+#: code anyone writes tests for. Running the regex parsers over a 4 MB minified
+#: bundle costs seconds and yields nonsense identifiers.
+MAX_SOURCE_BYTES = 1_500_000
+
+#: Generated/minified artefacts keep a normal extension, so the size guard alone
+#: does not catch the small ones.
+_GENERATED_MARKERS = (".min.js", ".min.ts", ".min.css", ".bundle.js", "-lock.js", ".d.ts")
+
+
+def _read_source(path: Path) -> str:
+    """Read a file for parsing, or return '' when it is not worth parsing."""
+    try:
+        if path.stat().st_size > MAX_SOURCE_BYTES:
+            return ""
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+
+
+def iter_project_files(
+    root: Path,
+    ignored_dirs: set[str],
+    ignored_files: set[str],
+    valid_extensions: set[str],
+) -> Iterator[Path]:
+    """Yield candidate source/test files, pruning ignored directories as it walks.
+
+    ``rglob`` descends into every directory and filters afterwards, so a repo
+    with ``node_modules`` paid for a full traversal of tens of thousands of files
+    it then threw away - the dominant cost of a scan. ``os.walk`` lets the
+    ignored directories be pruned before they are entered.
+    """
+    for dirpath, filenames in walk.walk_dirs(root, ignored_dirs):
+        current = Path(dirpath)
+        for filename in filenames:
+            if filename in ignored_files or _is_tooling_config(filename):
+                continue
+            lowered = filename.lower()
+            if lowered.endswith(_GENERATED_MARKERS):
+                continue
+            # Match extensions case-insensitively: `CALC.PY` or `Util.C` is
+            # source code just as much as its lowercase twin, and an
+            # uppercase-sensitive comparison silently dropped those files -
+            # they then showed up neither as modules nor as test gaps.
+            suffix = lowered[lowered.rfind(".") :] if "." in filename else ""
+            if suffix not in valid_extensions:
+                continue
+            yield current / filename
 
 
 def _is_test_file(path: Path, root: Path | None = None) -> bool:
@@ -143,6 +187,65 @@ def _is_test_file(path: Path, root: Path | None = None) -> bool:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Source extraction patterns
+#
+# Compiled once at import: the scanner applies them to every file in a repo, and
+# `re`'s internal cache is capped and shared with every other caller.
+# --------------------------------------------------------------------------- #
+
+_IMPORT_RE = re.compile(
+    r"""(?:import\s+(?:.*?from\s+)?['"]([^'"]+)['"]|require\(['"]([^'"]+)['"]\)|use\s+([a-zA-Z0-9_:\\]+);)"""
+)
+_JS_FUNC_RE = re.compile(
+    r"(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)"
+    r"|(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?"
+    r"(?:\(([^)]*)\)|[a-zA-Z0-9_$]+)(?:\s*:\s*[^=]+)?\s*=>"
+)
+#: Method declarations. The previous form - `(?:public|private|protected|async|\s)+\s+`
+#: - nests two quantifiers that both match whitespace, so a non-matching line
+#: forced exponential backtracking (a single 60 KB React page cost 0.4s, and a
+#: pathological file could hang the scan outright). Anchoring to the start of a
+#: line is both linear and more accurate: real method declarations start one.
+_METHOD_RE = re.compile(
+    r"^[ \t]*(?:(?:public|private|protected|static|async|override|final)\s+)*"
+    r"([a-zA-Z0-9_$]+)\s*\(([^)\n]*)\)\s*\{",
+    re.MULTILINE,
+)
+_NOT_METHOD_NAMES = {
+    "if",
+    "for",
+    "while",
+    "switch",
+    "catch",
+    "function",
+    "constructor",
+    "return",
+    "do",
+    "else",
+    "try",
+    "with",
+}
+_JS_TYPE_RE = re.compile(r"(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z0-9_$]+)")
+_GO_FUNC_RE = re.compile(r"func\s+(?:\(([^)]+)\)\s+)?([a-zA-Z0-9_]+)\s*\(([^)]*)\)")
+_RUST_FUNC_RE = re.compile(r"(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)")
+_RUST_TYPE_RE = re.compile(r"(?:pub\s+)?(?:struct|enum|trait)\s+([a-zA-Z0-9_]+)")
+_JAVA_METHOD_RE = re.compile(
+    r"(?:public|protected|private)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>\[\]]+)\s+"
+    r"([a-zA-Z0-9_]+)\s*\(([^)]*)\)"
+)
+_JAVA_CLASS_RE = re.compile(r"(?:public\s+)?class\s+([a-zA-Z0-9_]+)")
+_PHP_FUNC_RE = re.compile(r"function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)")
+_RUBY_DEF_RE = re.compile(r"def\s+([a-zA-Z0-9_!?]+)(?:\s*\(([^)]*)\))?")
+
+_JS_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
+_GO_EXTENSIONS = {".go"}
+_RUST_EXTENSIONS = {".rs"}
+_JVM_EXTENSIONS = {".java", ".cs", ".kt", ".kts", ".scala", ".sc", ".groovy", ".gradle", ".vb", ".fs"}
+_PHP_EXTENSIONS = {".php"}
+_RUBY_EXTENSIONS = {".rb"}
+
+
 def _format_python_args(args_node: ast.arguments) -> str:
     """Formats AST arguments node into readable signature string."""
     parts: list[str] = []
@@ -172,7 +275,7 @@ def _parse_python_source(
     line_count = 0
 
     try:
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        content = _read_source(file_path)
         line_count = len(content.splitlines())
         tree = ast.parse(content, filename=str(file_path))
 
@@ -236,13 +339,15 @@ def _parse_python_source(
     return func_names, func_details, classes, imports, line_count
 
 
-def _parse_python_test(file_path: Path) -> tuple[list[str], list[str]]:
-    """Extract test functions and imported modules from a Python test file."""
+def _parse_python_test(file_path: Path) -> tuple[list[str], list[str], int]:
+    """Extract test functions, imported modules and line count from a Python test file."""
     test_funcs: list[str] = []
     imports: list[str] = []
+    line_count = 0
 
     try:
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        content = _read_source(file_path)
+        line_count = len(content.splitlines())
         tree = ast.parse(content, filename=str(file_path))
         for node in tree.body:
             if isinstance(node, ast.Import):
@@ -262,13 +367,101 @@ def _parse_python_test(file_path: Path) -> tuple[list[str], list[str]]:
                         test_funcs.append(f"{node.name}.{item.name}")
     except Exception:
         pass
-    return test_funcs, imports
+    return test_funcs, imports, line_count
+
+
+def _extract_types(content: str, classes: list[str], patterns: tuple[re.Pattern[str], ...]) -> None:
+    """Collect type declarations, running only the patterns the language needs."""
+    for pattern in patterns:
+        for name in pattern.findall(content):
+            if name not in classes:
+                classes.append(name)
+
+
+def _extract_js(content: str, functions: list[str], details: list[FunctionDetail]) -> None:
+    for m in _JS_FUNC_RE.finditer(content):
+        fn_name = m.group(1) or m.group(3)
+        fn_args = m.group(2) or m.group(4) or ""
+        if fn_name and not fn_name.startswith("_") and fn_name not in functions:
+            functions.append(fn_name)
+            details.append(
+                FunctionDetail(
+                    name=fn_name,
+                    signature=f"({fn_args.strip()})",
+                    is_async="async" in m.group(0),
+                )
+            )
+
+    for m in _METHOD_RE.finditer(content):
+        m_name = m.group(1)
+        if (
+            m_name
+            and m_name not in _NOT_METHOD_NAMES
+            and not m_name.startswith("_")
+            and m_name not in functions
+        ):
+            functions.append(m_name)
+            details.append(FunctionDetail(name=m_name, signature=f"({m.group(2).strip()})", is_method=True))
+
+
+def _extract_go(content: str, functions: list[str], details: list[FunctionDetail]) -> None:
+    for gm in _GO_FUNC_RE.finditer(content):
+        receiver, fn_name, args = gm.group(1), gm.group(2), gm.group(3)
+        if fn_name and fn_name not in {"init", "main"}:
+            rec_clean = receiver.split()[-1].lstrip("*") if receiver else ""
+            full_name = f"{rec_clean}.{fn_name}" if rec_clean else fn_name
+            functions.append(full_name)
+            details.append(FunctionDetail(name=full_name, signature=f"({args})", is_method=bool(receiver)))
+
+
+def _extract_rust(content: str, functions: list[str], details: list[FunctionDetail]) -> None:
+    for rf in _RUST_FUNC_RE.finditer(content):
+        fn_name = rf.group(1)
+        if fn_name:
+            functions.append(fn_name)
+            details.append(
+                FunctionDetail(name=fn_name, signature=f"({rf.group(2)})", is_async="async" in rf.group(0))
+            )
+
+
+def _extract_jvm(
+    content: str, functions: list[str], details: list[FunctionDetail], classes: list[str]
+) -> None:
+    for jm in _JAVA_METHOD_RE.finditer(content):
+        fn_name = jm.group(1)
+        if fn_name and fn_name not in classes and fn_name not in functions:
+            functions.append(fn_name)
+            details.append(FunctionDetail(name=fn_name, signature=f"({jm.group(2)})", is_method=True))
+
+
+def _extract_php(content: str, functions: list[str], details: list[FunctionDetail]) -> None:
+    for pm in _PHP_FUNC_RE.finditer(content):
+        p_name = pm.group(1)
+        if p_name and not p_name.startswith("__") and p_name not in functions:
+            functions.append(p_name)
+            details.append(FunctionDetail(name=p_name, signature=f"({pm.group(2)})"))
+
+
+def _extract_ruby(content: str, functions: list[str], details: list[FunctionDetail]) -> None:
+    for rm in _RUBY_DEF_RE.finditer(content):
+        r_name = rm.group(1)
+        if r_name and r_name not in functions:
+            functions.append(r_name)
+            details.append(FunctionDetail(name=r_name, signature=f"({rm.group(2) or ''})"))
 
 
 def _parse_generic_source(
     file_path: Path,
 ) -> tuple[list[str], list[FunctionDetail], list[str], list[str], int]:
-    """Parse JS/TS/Go/Rust/Java/C#/PHP/Ruby source files."""
+    """Parse a non-Python source file into functions, classes, imports and size.
+
+    Extraction is dispatched on the file's extension. Running every language's
+    patterns over every file was both slow and wrong: PHP's ``function name()``
+    and Java's method pattern happily match TypeScript, so a ``.ts`` file picked
+    up phantom "methods" from three other languages' rules. Extensions with no
+    dedicated grammar still get the broad pass, which is how C/C++/Swift and
+    friends were being handled all along.
+    """
     functions: list[str] = []
     details: list[FunctionDetail] = []
     classes: list[str] = []
@@ -276,123 +469,58 @@ def _parse_generic_source(
     line_count = 0
 
     try:
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        content = _read_source(file_path)
         line_count = len(content.splitlines())
+        suffix = file_path.suffix.lower()
 
-        # 1. Imports extraction
-        import_matches = re.findall(
-            r"""(?:import\s+(?:.*?from\s+)?['"]([^'"]+)['"]|require\(['"]([^'"]+)['"]\)|use\s+([a-zA-Z0-9_:\\]+);)""",
-            content,
-        )
-        for m in import_matches:
-            imp = m[0] or m[1] or m[2]
+        for m in _IMPORT_RE.finditer(content):
+            imp = m.group(1) or m.group(2) or m.group(3)
             if imp:
                 imports.append(imp)
 
-        # 2. JS / TS functions & classes
-        js_func_matches = re.finditer(
-            r"(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)|(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?(?:\(([^)]*)\)|[a-zA-Z0-9_$]+)(?:\s*:\s*[^=]+)?\s*=>",
-            content,
-        )
-        for m in js_func_matches:
-            fn_name = m.group(1) or m.group(3)
-            fn_args = m.group(2) or m.group(4) or ""
-            if fn_name and not fn_name.startswith("_") and fn_name not in functions:
-                functions.append(fn_name)
-                details.append(
-                    FunctionDetail(
-                        name=fn_name,
-                        signature=f"({fn_args.strip()})",
-                        is_async="async" in m.group(0),
-                    )
-                )
-
-        # Class methods in JS/TS
-        js_method_matches = re.finditer(
-            r"(?:public|private|protected|async|\s)+\s+([a-zA-Z0-9_$]+)\s*\(([^)]*)\)\s*\{",
-            content,
-        )
-        for m in js_method_matches:
-            m_name = m.group(1)
-            if (
-                m_name
-                and m_name not in {"if", "for", "while", "switch", "catch", "function", "constructor"}
-                and not m_name.startswith("_")
-                and m_name not in functions
-            ):
-                functions.append(m_name)
-                details.append(FunctionDetail(name=m_name, signature=f"({m.group(2).strip()})", is_method=True))
-
-        for cm in re.findall(r"(?:export\s+)?(?:class|interface|type)\s+([a-zA-Z0-9_$]+)", content):
-            classes.append(cm)
-
-        # 3. Go functions and struct methods
-        go_methods = re.finditer(r"func\s+(?:\(([^)]+)\)\s+)?([a-zA-Z0-9_]+)\s*\(([^)]*)\)", content)
-        for gm in go_methods:
-            receiver = gm.group(1)
-            fn_name = gm.group(2)
-            args = gm.group(3)
-            if fn_name and fn_name not in {"init", "main"}:
-                rec_clean = receiver.split()[-1].lstrip("*") if receiver else ""
-                full_name = f"{rec_clean}.{fn_name}" if rec_clean else fn_name
-                functions.append(full_name)
-                details.append(FunctionDetail(name=full_name, signature=f"({args})", is_method=bool(receiver)))
-
-        # 4. Rust functions and impl methods
-        rust_funcs = re.finditer(r"(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)", content)
-        for rf in rust_funcs:
-            fn_name = rf.group(1)
-            args = rf.group(2)
-            if fn_name:
-                functions.append(fn_name)
-                details.append(FunctionDetail(name=fn_name, signature=f"({args})", is_async="async" in rf.group(0)))
-
-        for r_struct in re.findall(r"(?:pub\s+)?(?:struct|enum|trait)\s+([a-zA-Z0-9_]+)", content):
-            classes.append(r_struct)
-
-        # 5. Java / C# / PHP / Ruby classes and methods
-        java_methods = re.finditer(
-            r"(?:public|protected|private)\s+(?:static\s+)?(?:async\s+)?(?:[\w<>\[\]]+)\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)",
-            content,
-        )
-        for jm in java_methods:
-            fn_name = jm.group(1)
-            if fn_name and fn_name not in classes and fn_name not in functions:
-                functions.append(fn_name)
-                details.append(FunctionDetail(name=fn_name, signature=f"({jm.group(2)})", is_method=True))
-
-        for jc in re.findall(r"(?:public\s+)?class\s+([a-zA-Z0-9_]+)", content):
-            if jc not in classes:
-                classes.append(jc)
-
-        # PHP methods
-        php_methods = re.finditer(r"function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)", content)
-        for pm in php_methods:
-            p_name = pm.group(1)
-            if p_name and not p_name.startswith("__") and p_name not in functions:
-                functions.append(p_name)
-                details.append(FunctionDetail(name=p_name, signature=f"({pm.group(2)})"))
-
-        # Ruby methods
-        rb_methods = re.finditer(r"def\s+([a-zA-Z0-9_!?]+)(?:\s*\(([^)]*)\))?", content)
-        for rm in rb_methods:
-            r_name = rm.group(1)
-            if r_name and r_name not in functions:
-                functions.append(r_name)
-                details.append(FunctionDetail(name=r_name, signature=f"({rm.group(2) or ''})"))
+        if suffix in _JS_EXTENSIONS:
+            _extract_types(content, classes, (_JS_TYPE_RE,))
+            _extract_js(content, functions, details)
+        elif suffix in _GO_EXTENSIONS:
+            # Go declares types as `type Foo struct`, which the JS type pattern
+            # already covers.
+            _extract_types(content, classes, (_JS_TYPE_RE,))
+            _extract_go(content, functions, details)
+        elif suffix in _RUST_EXTENSIONS:
+            _extract_types(content, classes, (_RUST_TYPE_RE,))
+            _extract_rust(content, functions, details)
+        elif suffix in _JVM_EXTENSIONS:
+            _extract_types(content, classes, (_JS_TYPE_RE, _JAVA_CLASS_RE))
+            _extract_jvm(content, functions, details, classes)
+        elif suffix in _PHP_EXTENSIONS:
+            _extract_types(content, classes, (_JAVA_CLASS_RE,))
+            _extract_php(content, functions, details)
+        elif suffix in _RUBY_EXTENSIONS:
+            _extract_types(content, classes, (_JAVA_CLASS_RE,))
+            _extract_ruby(content, functions, details)
+        else:
+            _extract_types(content, classes, (_JS_TYPE_RE, _RUST_TYPE_RE, _JAVA_CLASS_RE))
+            _extract_js(content, functions, details)
+            _extract_go(content, functions, details)
+            _extract_rust(content, functions, details)
+            _extract_jvm(content, functions, details, classes)
+            _extract_php(content, functions, details)
+            _extract_ruby(content, functions, details)
     except Exception:
         pass
 
     return functions, details, classes, imports, line_count
 
 
-def _parse_generic_test(file_path: Path) -> tuple[list[str], list[str]]:
-    """Extract test blocks and imports from JS/TS/Go/Rust/Java files."""
+def _parse_generic_test(file_path: Path) -> tuple[list[str], list[str], int]:
+    """Extract test blocks, imports and line count from JS/TS/Go/Rust/Java files."""
     tests: list[str] = []
     imports: list[str] = []
+    line_count = 0
 
     try:
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        content = _read_source(file_path)
+        line_count = len(content.splitlines())
 
         # Extract imports
         for imp in re.findall(
@@ -421,7 +549,7 @@ def _parse_generic_test(file_path: Path) -> tuple[list[str], list[str]]:
         tests.extend(java_tests)
     except Exception:
         pass
-    return tests, imports
+    return tests, imports, line_count
 
 
 def scan_project_structure(
@@ -508,26 +636,15 @@ def scan_project_structure(
         ".v",
     }
 
-    for item in root.rglob("*"):
-        if not item.is_file():
-            continue
-
-        # Check ignored path components
-        rel_parts = set(item.relative_to(root).parts)
-        if any(ignored in rel_parts for ignored in effective_ignored_dirs):
-            continue
-
-        if item.name in effective_ignored_files or item.suffix not in valid_extensions:
-            continue
-
+    for item in iter_project_files(root, effective_ignored_dirs, effective_ignored_files, valid_extensions):
         rel_path = item.relative_to(root).as_posix()
         is_test = _is_test_file(item, root)
 
         if is_test:
             if item.suffix == ".py":
-                test_funcs, test_imports = _parse_python_test(item)
+                test_funcs, test_imports, test_lines = _parse_python_test(item)
             else:
-                test_funcs, test_imports = _parse_generic_test(item)
+                test_funcs, test_imports, test_lines = _parse_generic_test(item)
 
             test_modules.append(
                 TestModule(
@@ -536,7 +653,7 @@ def scan_project_structure(
                     framework=framework,
                     test_functions=test_funcs,
                     imported_modules=test_imports,
-                    line_count=len(item.read_text(encoding="utf-8", errors="ignore").splitlines()),
+                    line_count=test_lines,
                 )
             )
         else:

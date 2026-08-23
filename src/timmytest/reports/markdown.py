@@ -30,8 +30,10 @@ def generate_markdown_report(audit: ProjectAudit, output_path: Path | None = Non
                 f"- **Total Tests Executed**: {tr.total}",
                 f"- **Passed**: {tr.passed}",
                 f"- **Failed**: {tr.failed}",
+                f"- **Errors (suite/setup)**: {tr.errors}",
                 f"- **Skipped**: {tr.skipped}",
                 f"- **Duration**: {tr.duration_seconds}s",
+                f"- **Exit Code**: {tr.exit_code}",
                 f"- **Command**: `{tr.command}`",
                 "",
             ]

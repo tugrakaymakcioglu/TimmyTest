@@ -76,4 +76,3 @@ def test_enrich_test_failures():
     enriched = enrich_test_failures(run_result)
     assert len(enriched.failures) == 1
     assert "KeyError" in enriched.failures[0].suggested_fix
-

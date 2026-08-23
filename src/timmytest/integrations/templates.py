@@ -3,7 +3,9 @@
 from timmytest.detector.models import Ecosystem, TestFramework
 
 
-def get_cursorrules_content(project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str) -> str:
+def get_cursorrules_content(
+    project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str
+) -> str:
     """Generate .cursorrules content optimized for Cursor AI."""
     return f"""# TimmyTest Zero-Token Testing & AI Agent Rules for Cursor
 
@@ -31,7 +33,9 @@ def get_cursorrules_content(project_name: str, ecosystem: Ecosystem, framework: 
 """
 
 
-def get_cursor_mdc_content(project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str) -> str:
+def get_cursor_mdc_content(
+    project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str
+) -> str:
     """Generate .cursor/rules/timmytest.mdc content for modern Cursor rule indexing."""
     return f"""---
 description: Zero-Token Test Running and Diagnostics with TimmyTest
@@ -53,7 +57,9 @@ Test Command: `{test_cmd}`
 """
 
 
-def get_claude_md_content(project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str) -> str:
+def get_claude_md_content(
+    project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str
+) -> str:
     """Generate CLAUDE.md content for Claude Code CLI and Anthropic agents."""
     return f"""# Project Instructions for Claude Code ({project_name})
 
@@ -91,7 +97,9 @@ TimmyTest is configured in this repository to prevent token waste during testing
 """
 
 
-def get_copilot_instructions_content(project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str) -> str:
+def get_copilot_instructions_content(
+    project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str
+) -> str:
     """Generate .github/copilot-instructions.md for GitHub Copilot."""
     return f"""# GitHub Copilot Instructions for {project_name}
 
@@ -106,7 +114,9 @@ def get_copilot_instructions_content(project_name: str, ecosystem: Ecosystem, fr
 """
 
 
-def get_agents_md_content(project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str) -> str:
+def get_agents_md_content(
+    project_name: str, ecosystem: Ecosystem, framework: TestFramework, test_cmd: str
+) -> str:
     """Generate AGENTS.md for universal AI coding agents (Antigravity, Codex, Gemini, Devin, Aider, Windsurf)."""
     return f"""# Universal AI Agent Guide for {project_name}
 

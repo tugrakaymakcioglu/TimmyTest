@@ -64,6 +64,75 @@ def test_node_runner_parse_jest_output_with_ansi():
     assert "auth.test.ts" in failures[0].test_name
 
 
+def test_node_runner_parse_vitest_summary():
+    """Vitest writes 'Tests  N passed (N)' - no colon, pipes instead of commas."""
+    runner = NodeRunner()
+    sample = """
+ RUN  v4.0.18 C:/projects/app
+
+ ✓ __tests__/lib/security.test.js (26 tests) 16ms
+
+ Test Files  4 passed (4)
+      Tests  1 failed | 71 passed | 2 skipped (74)
+   Start at  15:41:11
+   Duration  24.55s
+"""
+    passed, failed, skipped, failures = runner._parse_node_output(sample)
+
+    assert passed == 71
+    assert failed == 1
+    assert skipped == 2
+
+
+def test_node_runner_counts_failed_suite_as_error():
+    """A suite that fails to load leaves every test green; the run is still broken."""
+    runner = NodeRunner()
+    sample = """
+ ❯ tests/example.spec.ts (0 test)
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  72 passed (72)
+
+ FAIL  tests/example.spec.ts [ tests/example.spec.ts ]
+Error: Playwright Test did not expect test() to be called here.
+"""
+    passed, failed, skipped, failures = runner._parse_node_output(sample)
+    assert (passed, failed, skipped) == (72, 0, 0)
+    assert runner._parse_failed_suites(sample) == 1
+    # The FAIL line is emitted twice by Vitest in a real run; only one failure.
+    assert len(failures) == 1
+    assert failures[0].test_name == "tests/example.spec.ts"
+
+
+def test_node_runner_parse_mocha_output():
+    runner = NodeRunner()
+    sample = "\n  72 passing (2s)\n  1 failing\n  2 pending\n"
+    passed, failed, skipped, _ = runner._parse_node_output(sample)
+    assert (passed, failed, skipped) == (72, 1, 2)
+
+
+def test_node_runner_jest_counts_todo_and_skipped():
+    runner = NodeRunner()
+    sample = "Tests:       1 failed, 2 skipped, 3 todo, 4 passed, 10 total\n"
+    passed, failed, skipped, _ = runner._parse_node_output(sample)
+    assert (passed, failed, skipped) == (4, 1, 5)
+
+
+def test_node_runner_appends_test_paths_without_stray_separator():
+    runner = NodeRunner()
+    assert runner._append_test_paths(["npm", "test"], ["a.test.js"]) == [
+        "npm",
+        "test",
+        "--",
+        "a.test.js",
+    ]
+    assert runner._append_test_paths(["node", "--test"], ["a.test.js"]) == [
+        "node",
+        "--test",
+        "a.test.js",
+    ]
+
+
 def test_rust_runner_parse_cargo_output():
     runner = RustRunner()
     sample_output = """
@@ -115,6 +184,7 @@ def test_go_runner_parse_output():
 
 def test_orchestrator_multi_ecosystem(temp_project_dir: Path):
     import sys
+
     # Test Java project orchestration
     (temp_project_dir / "pom.xml").write_text("<project></project>", encoding="utf-8")
     py_exe = sys.executable
@@ -157,6 +227,47 @@ def test_orchestrator_unknown_ecosystem_sniffs(temp_project_dir: Path):
     assert result.has_executed is True
 
 
+def test_python_runner_parse_pytest_quiet_mode():
+    """`pytest -q` prints a bare summary with no `=` frame and no status lines.
+
+    Both parsers used to come up empty, so an all-green quiet run was reported
+    as 0 total - or, with a non-zero exit, as a bogus collection error.
+    """
+    runner = PythonRunner()
+    passed, failed, skipped, errors, failures = runner._parse_pytest_output("2 passed in 0.01s")
+    assert (passed, failed, skipped, errors) == (2, 0, 0, 0)
+    assert failures == []
+
+    passed, failed, skipped, errors, _ = runner._parse_pytest_output("4 failed, 2 passed, 1 skipped in 0.12s")
+    assert (passed, failed, skipped, errors) == (2, 4, 1, 0)
+
+
+def test_python_runner_resolves_unavailable_recommended_command(temp_project_dir: Path):
+    """The registry's `pytest -ra` presumes a global pytest; without one the run
+    used to die with WinError 2 / FileNotFoundError and report a bogus
+    collection error instead of falling back to the smart resolver."""
+    (temp_project_dir / "test_thing.py").write_text("def test_ok():\n    assert 1 == 1\n", encoding="utf-8")
+
+    runner = PythonRunner()
+    # A binary name that cannot exist on any platform keeps this test honest on
+    # machines that DO have pytest installed globally.
+    res = runner.run_tests(
+        temp_project_dir,
+        custom_cmd="definitely-not-a-real-binary-9x7q -ra",
+        timeout_seconds=120,
+    )
+    assert res.has_executed is True
+    assert res.exit_code == 0
+    assert res.passed == 1
+
+
+def test_node_runner_failure_names_deduplicate_and_strip_decorations():
+    names = NodeRunner()._failure_names(
+        "FAIL  src/a.test.js [ 0.5s ]\n \u2715 divides (1 ms)\nFAIL  src/a.test.js"
+    )
+    assert names == ["src/a.test.js", "divides"]
+
+
 def test_python_runner_runs_with_test_paths(temp_project_dir: Path):
     """Incremental test_paths targets a specific test file and executes it."""
     (temp_project_dir / "test_thing.py").write_text("def test_ok():\n    assert 1 == 1\n", encoding="utf-8")
@@ -193,4 +304,3 @@ def test_generic_runner(temp_project_dir: Path):
     assert res_fail.has_executed is True
     assert res_fail.exit_code != 0
     assert res_fail.failed == 1
-

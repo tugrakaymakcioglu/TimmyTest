@@ -12,6 +12,9 @@ from pathlib import Path
 from timmytest.detector.gap_analyzer import _find_matching_test
 from timmytest.detector.models import SourceModule, TestModule
 
+#: git should answer a diff instantly; anything longer means it is blocked.
+_GIT_TIMEOUT_SECONDS = 30
+
 
 class NotAGitRepositoryError(RuntimeError):
     """Raised when incremental selection is requested outside a git repo."""
@@ -24,8 +27,12 @@ def get_changed_files(root: Path, ref: str | None = None) -> list[str]:
     incremental runs). ``ref`` examples: ``HEAD~1``, ``main``, ``origin/main``,
     or a commit SHA.
     """
-    cmd = ["git", "diff", "--name-only"]
-    cmd.append(ref if ref else "HEAD")
+    # `--relative` makes git report paths relative to `root` rather than to the
+    # repository root. Without it, auditing a subdirectory of a repo (a monorepo
+    # package, or any project nested below its .git) produced paths that could
+    # never match the scanner's module paths, so `--changed` silently selected
+    # nothing and ran the entire suite.
+    cmd = ["git", "diff", "--name-only", "--relative", ref if ref else "HEAD"]
 
     try:
         proc = subprocess.run(
@@ -35,6 +42,7 @@ def get_changed_files(root: Path, ref: str | None = None) -> list[str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
         untracked = subprocess.run(
             ["git", "ls-files", "--others", "--exclude-standard"],
@@ -43,9 +51,13 @@ def get_changed_files(root: Path, ref: str | None = None) -> list[str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=_GIT_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:  # git not installed
         raise NotAGitRepositoryError("git is not available on this system") from exc
+    except subprocess.TimeoutExpired as exc:
+        # A held index.lock or a stalled credential prompt must not hang the audit.
+        raise NotAGitRepositoryError(f"git did not respond within {_GIT_TIMEOUT_SECONDS}s") from exc
 
     if proc.returncode != 0:
         raise NotAGitRepositoryError(

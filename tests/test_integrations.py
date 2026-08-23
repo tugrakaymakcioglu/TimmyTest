@@ -90,7 +90,10 @@ def test_integrate_project_skip_existing(temp_project_dir: Path):
     claude_file.write_text("# Existing Claude instructions with timmytest configured", encoding="utf-8")
 
     res = integrate_project(temp_project_dir, force=False)
-    assert claude_file in res.skipped_files
+    # Canonicalize both sides: on Windows CI the temp dir can surface as an
+    # 8.3 short name (RUNNER~1) while integrate_project() reports resolved
+    # long paths (runneradmin); resolve() maps both to the same real path.
+    assert claude_file.resolve() in {p.resolve() for p in res.skipped_files}
 
 
 def test_integrate_project_node_package_json(temp_project_dir: Path):
@@ -102,7 +105,8 @@ def test_integrate_project_node_package_json(temp_project_dir: Path):
 
     assert "timmy:check" in data["scripts"]
     assert "timmy:test" in data["scripts"]
-    assert pkg_file in res.modified_files
+    # Same canonicalization as above: short vs long temp-dir names on Windows.
+    assert pkg_file.resolve() in {p.resolve() for p in res.modified_files}
 
 
 def test_cli_integrate_command(temp_project_dir: Path):

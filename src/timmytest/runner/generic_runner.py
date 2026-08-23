@@ -48,14 +48,16 @@ class GenericRunner(BaseRunner):
                 command=cmd,
                 total=0,
                 failed=1,
+                duration_seconds=duration,
                 exit_code=124,
-                raw_output=f"Execution timed out after {timeout_seconds} seconds.",
+                raw_output=f"Execution timed out after {timeout_seconds} seconds.\n\n{raw_output}",
                 has_executed=True,
                 failures=[
                     FailureDetail(
                         test_name="Timeout",
                         error_type="TimeoutError",
                         message=f"Test command timed out after {timeout_seconds}s",
+                        traceback=raw_output[-1000:],
                         suggested_fix="Increase timeout via --timeout option.",
                     )
                 ],

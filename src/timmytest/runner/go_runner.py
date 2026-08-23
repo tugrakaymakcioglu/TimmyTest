@@ -59,14 +59,16 @@ class GoRunner(BaseRunner):
                 command=display_cmd,
                 total=0,
                 failed=1,
+                duration_seconds=duration,
                 exit_code=124,
-                raw_output=f"Go test execution timed out after {timeout_seconds}s.",
+                raw_output=f"Go test execution timed out after {timeout_seconds}s.\n\n{raw_output}",
                 has_executed=True,
                 failures=[
                     FailureDetail(
                         test_name="Timeout",
                         error_type="TimeoutError",
                         message=f"Go test exceeded {timeout_seconds}s limit",
+                        traceback=raw_output[-1000:],
                         suggested_fix="Check for blocking channels or deadlocks.",
                     )
                 ],

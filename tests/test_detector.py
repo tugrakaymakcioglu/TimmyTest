@@ -67,15 +67,15 @@ def test_scan_project_structure_python(temp_project_dir: Path):
     src_dir.mkdir(parents=True)
 
     (src_dir / "auth.py").write_text(
-        'import os\nfrom pathlib import Path\n\n'
-        'class AuthService:\n'
+        "import os\nfrom pathlib import Path\n\n"
+        "class AuthService:\n"
         '    """Service managing authentication."""\n'
-        '    def login(self, username: str, password: str) -> bool:\n'
+        "    def login(self, username: str, password: str) -> bool:\n"
         '        """Authenticate user credentials."""\n'
-        '        return True\n\n'
-        'async def hash_password(plain: str) -> str:\n'
+        "        return True\n\n"
+        "async def hash_password(plain: str) -> str:\n"
         '    """Compute password hash."""\n'
-        '    return plain\n',
+        "    return plain\n",
         encoding="utf-8",
     )
 
@@ -119,26 +119,77 @@ def test_scan_project_structure_python(temp_project_dir: Path):
     assert "demo.auth" in tests[0].imported_modules
 
 
+def test_scan_skips_tooling_config_files(temp_project_dir: Path):
+    """Build config is not application code and must not become a test gap."""
+    for name in (
+        "next.config.js",
+        "playwright.config.ts",
+        "vitest.config.js",
+        "vitest.setup.js",
+        "eslint.config.mjs",
+        "babel.js",
+    ):
+        (temp_project_dir / name).write_text("export default {};\n", encoding="utf-8")
+    (temp_project_dir / "middleware.js").write_text(
+        "export function middleware(req) { return req; }\n", encoding="utf-8"
+    )
+
+    sources, _ = scan_project_structure(temp_project_dir, Ecosystem.NODE, TestFramework.VITEST)
+
+    assert [s.rel_path for s in sources] == ["middleware.js"]
+
+
+def test_scan_skips_generated_and_oversized_files(temp_project_dir: Path):
+    """Minified bundles and giant generated blobs are not testable source."""
+    (temp_project_dir / "app.min.js").write_text("export function a(){}", encoding="utf-8")
+    (temp_project_dir / "types.d.ts").write_text("export declare function b(): void;", encoding="utf-8")
+    (temp_project_dir / "huge.js").write_text("// " + "x" * 1_600_000, encoding="utf-8")
+    (temp_project_dir / "real.js").write_text("export function c(){}\n", encoding="utf-8")
+
+    sources, _ = scan_project_structure(temp_project_dir, Ecosystem.NODE, TestFramework.VITEST)
+    by_path = {s.rel_path: s for s in sources}
+
+    assert "real.js" in by_path
+    assert "app.min.js" not in by_path
+    assert "types.d.ts" not in by_path
+    # The oversized file is still listed as a module, but is not parsed.
+    assert by_path["huge.js"].functions == []
+
+
+def test_scan_does_not_apply_other_languages_patterns(temp_project_dir: Path):
+    """A TS file must not collect phantom methods from the PHP/Ruby/Java rules."""
+    (temp_project_dir / "svc.ts").write_text(
+        "export class Svc {\n  run(input: string) { return input; }\n}\ndef notRuby = 1\n",
+        encoding="utf-8",
+    )
+    sources, _ = scan_project_structure(temp_project_dir, Ecosystem.NODE, TestFramework.VITEST)
+    module = next(s for s in sources if s.rel_path == "svc.ts")
+
+    assert "Svc" in module.classes
+    assert "run" in module.functions
+    assert "notRuby" not in module.functions
+
+
 def test_scan_project_structure_multi_lang(temp_project_dir: Path):
     src_dir = temp_project_dir / "src"
     src_dir.mkdir(parents=True)
 
     # JS/TS file
     (src_dir / "service.ts").write_text(
-        'export const fetchUser = async (id: string): Promise<User> => { return {}; };\n'
-        'export class UserService {\n  public async deleteUser(id: string) {}\n}\n',
+        "export const fetchUser = async (id: string): Promise<User> => { return {}; };\n"
+        "export class UserService {\n  public async deleteUser(id: string) {}\n}\n",
         encoding="utf-8",
     )
 
     # Go file
     (src_dir / "handler.go").write_text(
-        'package main\n\ntype Server struct{}\n\nfunc (s *Server) HandleRequest(w ResponseWriter, r *Request) {}\n',
+        "package main\n\ntype Server struct{}\n\nfunc (s *Server) HandleRequest(w ResponseWriter, r *Request) {}\n",
         encoding="utf-8",
     )
 
     # Java file
     (src_dir / "App.java").write_text(
-        'public class App {\n    public static void processOrder(int orderId) {}\n}\n',
+        "public class App {\n    public static void processOrder(int orderId) {}\n}\n",
         encoding="utf-8",
     )
 

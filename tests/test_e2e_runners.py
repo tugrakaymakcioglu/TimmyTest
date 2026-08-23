@@ -25,8 +25,8 @@ def _write_go_project(root: Path) -> None:
         "package math\n\nfunc Add(a, b int) int { return a + b }\n", encoding="utf-8"
     )
     (root / "math_test.go").write_text(
-        "package math\n\nimport \"testing\"\n\n"
-        "func TestAdd(t *testing.T) {\n\tif Add(2, 3) != 5 {\n\t\tt.Fatalf(\"expected 5, got %d\", Add(2, 3))\n\t}\n}\n",
+        'package math\n\nimport "testing"\n\n'
+        'func TestAdd(t *testing.T) {\n\tif Add(2, 3) != 5 {\n\t\tt.Fatalf("expected 5, got %d", Add(2, 3))\n\t}\n}\n',
         encoding="utf-8",
     )
 

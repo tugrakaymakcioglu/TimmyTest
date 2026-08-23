@@ -13,41 +13,107 @@ def test_registry_ids_map_to_valid_enums():
     for eco in registry["ecosystems"]:
         assert Ecosystem(eco["id"]) != Ecosystem.UNKNOWN, f"missing Ecosystem enum for {eco['id']}"
         for fw in eco.get("frameworks", []):
-            assert (
-                TestFramework(fw["id"]) != TestFramework.UNKNOWN
-            ), f"missing TestFramework enum for {fw['id']}"
+            assert TestFramework(fw["id"]) != TestFramework.UNKNOWN, (
+                f"missing TestFramework enum for {fw['id']}"
+            )
 
 
 @pytest.mark.parametrize(
     ("config_file", "config_content", "expected_eco", "expected_fw", "expected_cmd"),
     [
         # (config file to create, its content, expected ecosystem, framework, command substring)
-        ("Package.swift", "// swift-tools-version:5.7\n", Ecosystem.SWIFT, TestFramework.XCTEST, "swift test"),
+        (
+            "Package.swift",
+            "// swift-tools-version:5.7\n",
+            Ecosystem.SWIFT,
+            TestFramework.XCTEST,
+            "swift test",
+        ),
         ("pubspec.yaml", "name: demo\n", Ecosystem.DART, TestFramework.DART_TEST, "dart test"),
-        ("mix.exs", 'defmodule Demo.MixProject do\nend\n', Ecosystem.ELIXIR, TestFramework.EXUNIT, "mix test"),
+        (
+            "mix.exs",
+            "defmodule Demo.MixProject do\nend\n",
+            Ecosystem.ELIXIR,
+            TestFramework.EXUNIT,
+            "mix test",
+        ),
         ("stack.yaml", "resolver: lts-21\n", Ecosystem.HASKELL, TestFramework.HSPEC, "stack test"),
-        ("build.gradle.kts", "plugins { kotlin(\"jvm\") }\n", Ecosystem.KOTLIN, TestFramework.KOTLIN_TEST, "gradlew test"),
+        (
+            "build.gradle.kts",
+            'plugins { kotlin("jvm") }\n',
+            Ecosystem.KOTLIN,
+            TestFramework.KOTLIN_TEST,
+            "gradlew test",
+        ),
         ("build.sbt", 'scalaVersion := "3.3.0"\n', Ecosystem.SCALA, TestFramework.SCALATEST, "sbt test"),
-        ("foo.rockspec", "package = \"demo\"\n", Ecosystem.LUA, TestFramework.BUSTED, "busted"),
+        ("foo.rockspec", 'package = "demo"\n', Ecosystem.LUA, TestFramework.BUSTED, "busted"),
         ("Makefile.PL", "use ExtUtils::MakeMaker;\n", Ecosystem.PERL, TestFramework.PROVE, "prove"),
-        ("build.zig", 'const std = @import("std");\n', Ecosystem.ZIG, TestFramework.ZIG_TEST, "zig build test"),
+        (
+            "build.zig",
+            'const std = @import("std");\n',
+            Ecosystem.ZIG,
+            TestFramework.ZIG_TEST,
+            "zig build test",
+        ),
         ("shard.yml", "name: demo\n", Ecosystem.CRYSTAL, TestFramework.CRYSTAL_SPEC, "crystal spec"),
-        ("project.clj", "(defproject demo \"0.1.0\")\n", Ecosystem.CLOJURE, TestFramework.CLOJURE_TEST, "lein test"),
+        (
+            "project.clj",
+            '(defproject demo "0.1.0")\n',
+            Ecosystem.CLOJURE,
+            TestFramework.CLOJURE_TEST,
+            "lein test",
+        ),
         # --- vibe-coding agent favorites + completeness ---
-        ("foundry.toml", "[profile.default]\nsrc = \"src\"\n", Ecosystem.SOLIDITY, TestFramework.FOUNDRY, "forge test"),
+        (
+            "foundry.toml",
+            '[profile.default]\nsrc = "src"\n',
+            Ecosystem.SOLIDITY,
+            TestFramework.FOUNDRY,
+            "forge test",
+        ),
         ("dbt_project.yml", "name: demo\nversion: 1.0.0\n", Ecosystem.SQL, TestFramework.DBT, "dbt test"),
-        ("main.tf", 'resource "null_resource" "x" {}\n', Ecosystem.TERRAFORM, TestFramework.TERRAFORM_TEST, "terraform test"),
-        ("foo.psd1", "@{\n    RootModule = 'Demo'\n}\n", Ecosystem.POWERSHELL, TestFramework.PESTER, "Invoke-Pester"),
+        (
+            "main.tf",
+            'resource "null_resource" "x" {}\n',
+            Ecosystem.TERRAFORM,
+            TestFramework.TERRAFORM_TEST,
+            "terraform test",
+        ),
+        (
+            "foo.psd1",
+            "@{\n    RootModule = 'Demo'\n}\n",
+            Ecosystem.POWERSHELL,
+            TestFramework.PESTER,
+            "Invoke-Pester",
+        ),
         ("DESCRIPTION", "Package: demo\nTitle: Demo\n", Ecosystem.R, TestFramework.TESTTHAT, "testthat"),
-        ("Project.toml", 'name = "Demo"\nuuid = "123e4567"\n', Ecosystem.JULIA, TestFramework.JULIA_TEST, "Pkg.test"),
-        ("Jenkinsfile", "pipeline {\n    agent any\n}\n", Ecosystem.GROOVY, TestFramework.SPOCK, "gradlew test"),
-        ("rebar.config", "{erl_opts, [debug_info]}.\n", Ecosystem.ERLANG, TestFramework.EUNIT, "rebar3 eunit"),
+        (
+            "Project.toml",
+            'name = "Demo"\nuuid = "123e4567"\n',
+            Ecosystem.JULIA,
+            TestFramework.JULIA_TEST,
+            "Pkg.test",
+        ),
+        (
+            "Jenkinsfile",
+            "pipeline {\n    agent any\n}\n",
+            Ecosystem.GROOVY,
+            TestFramework.SPOCK,
+            "gradlew test",
+        ),
+        (
+            "rebar.config",
+            "{erl_opts, [debug_info]}.\n",
+            Ecosystem.ERLANG,
+            TestFramework.EUNIT,
+            "rebar3 eunit",
+        ),
         ("foo.nimble", 'version = "0.1.0"\n', Ecosystem.NIM, TestFramework.NIM_TEST, "nimble test"),
         ("dune-project", "(lang dune 3.0)\n", Ecosystem.OCAML, TestFramework.DUNE_TEST, "dune runtest"),
         ("elm.json", '{"type": "application"}\n', Ecosystem.ELM, TestFramework.ELM_TEST, "elm-test"),
         ("dub.json", '{"name": "demo"}\n', Ecosystem.D, TestFramework.DUB_TEST, "dub test"),
         ("v.mod", "Module {\n    name: 'demo'\n}\n", Ecosystem.V, TestFramework.V_TEST, "v test ."),
-        ("foo.bats", "@test \"addition works\" {}\n", Ecosystem.SHELL, TestFramework.BATS, "bats test"),
+        ("foo.bats", '@test "addition works" {}\n', Ecosystem.SHELL, TestFramework.BATS, "bats test"),
     ],
 )
 def test_detect_new_ecosystems(
@@ -103,8 +169,29 @@ def test_registry_covers_expected_language_count():
     ids = {eco["id"] for eco in registry["ecosystems"]}
     assert len(ids) >= 34
     for expected in {
-        "python", "node", "rust", "go", "java", "swift", "dart", "elixir", "zig", "crystal",
-        "solidity", "shell", "sql", "terraform", "powershell", "r", "julia", "groovy",
-        "erlang", "nim", "ocaml", "elm", "d", "v",
+        "python",
+        "node",
+        "rust",
+        "go",
+        "java",
+        "swift",
+        "dart",
+        "elixir",
+        "zig",
+        "crystal",
+        "solidity",
+        "shell",
+        "sql",
+        "terraform",
+        "powershell",
+        "r",
+        "julia",
+        "groovy",
+        "erlang",
+        "nim",
+        "ocaml",
+        "elm",
+        "d",
+        "v",
     }:
         assert expected in ids

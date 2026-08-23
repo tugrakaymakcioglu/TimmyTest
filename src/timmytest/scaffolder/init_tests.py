@@ -42,7 +42,9 @@ def initialize_test_scaffold(project: ProjectInfo, root_dir: Path) -> list[str]:
 
                     if gap.classes_to_test:
                         for cls_name in gap.classes_to_test:
-                            content_lines.append(f"\ndef test_{module_stem}_{cls_name.lower()}_initialization():")
+                            content_lines.append(
+                                f"\ndef test_{module_stem}_{cls_name.lower()}_initialization():"
+                            )
                             content_lines.append(f'    """Test initialization for {cls_name}."""')
                             content_lines.append("    # TODO: Implement test logic")
                             content_lines.append("    assert True\n")

@@ -15,4 +15,3 @@ def test_banner_functions():
     print_banner(show_subtitle=False)
     # Ensure show_fullscreen_splash executes without error
     show_fullscreen_splash(animate_progress=False)
-

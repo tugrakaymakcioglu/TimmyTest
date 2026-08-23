@@ -283,3 +283,49 @@ def test_incremental_paths_reach_the_generic_runner(monkeypatch, tmp_path):
     )
 
     assert "spec/user_spec.rb" in seen["cmd"]
+
+
+# --------------------------------------------------------------------------- #
+# analysis: empty --changed selection means "run nothing", not "run everything"
+# --------------------------------------------------------------------------- #
+
+
+def test_empty_changed_selection_skips_execution(monkeypatch, tmp_path):
+    """A clean tree under `--changed` used to fall back to running the WHOLE
+    suite - the exact cost the flag exists to avoid."""
+    from timmytest import analysis
+
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("def run():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_app.py").write_text(
+        "def test_run():\n    assert run() == 1\n", encoding="utf-8"
+    )
+
+    ran = {"executed": False}
+
+    def fake_run_tests(**kwargs):
+        ran["executed"] = True
+
+    monkeypatch.setattr(analysis, "get_affected_test_paths", lambda *a, **k: [], raising=False)
+    monkeypatch.setattr("timmytest.git_changed.get_affected_test_paths", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "timmytest.runner.orchestrator.run_project_tests",
+        lambda **kwargs: fake_run_tests(**kwargs),
+    )
+
+    audit = analysis.analyze_project(project_dir=tmp_path, execute_tests=True, changed=True)
+    assert audit.test_run.has_executed is False
+    assert ran["executed"] is False
+
+
+def test_iter_project_files_matches_uppercase_extensions(tmp_path):
+    """`CALC.PY` is source code just like `calc.py`; the case-sensitive suffix
+    check used to drop uppercase files from the scan entirely."""
+    from timmytest.detector.scanner import iter_project_files
+
+    (tmp_path / "UTIL.PY").write_text("X = 1\n", encoding="utf-8")
+    (tmp_path / "lower.py").write_text("Y = 2\n", encoding="utf-8")
+
+    names = {p.name for p in iter_project_files(tmp_path, set(), set(), {".py"})}
+    assert names == {"UTIL.PY", "lower.py"}

@@ -51,18 +51,36 @@ def _route_explicit(
         else:
             default_cmd = "mvn test"
         return generic.run_tests(
-            root, default_cmd, timeout_seconds, filter_pattern, test_paths, ecosystem=ecosystem, framework=framework
+            root,
+            default_cmd,
+            timeout_seconds,
+            filter_pattern,
+            test_paths,
+            ecosystem=ecosystem,
+            framework=framework,
         )
 
     if ecosystem == Ecosystem.DOTNET:
         return generic.run_tests(
-            root, "dotnet test", timeout_seconds, filter_pattern, test_paths, ecosystem=ecosystem, framework=framework
+            root,
+            "dotnet test",
+            timeout_seconds,
+            filter_pattern,
+            test_paths,
+            ecosystem=ecosystem,
+            framework=framework,
         )
 
     if ecosystem == Ecosystem.PHP:
         php_cmd = "vendor/bin/phpunit" if (root / "vendor" / "bin" / "phpunit").exists() else "composer test"
         return generic.run_tests(
-            root, php_cmd, timeout_seconds, filter_pattern, test_paths, ecosystem=ecosystem, framework=framework
+            root,
+            php_cmd,
+            timeout_seconds,
+            filter_pattern,
+            test_paths,
+            ecosystem=ecosystem,
+            framework=framework,
         )
 
     if ecosystem == Ecosystem.RUBY:

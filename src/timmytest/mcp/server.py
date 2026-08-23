@@ -10,15 +10,24 @@ from pathlib import Path
 from typing import Any
 
 from timmytest import __version__
-from timmytest.detector.ecosystem import detect_ecosystem
-from timmytest.detector.gap_analyzer import analyze_test_gaps
-from timmytest.detector.models import ProjectInfo, TestRunResult
-from timmytest.detector.scanner import scan_project_structure
-from timmytest.diagnostics.analyzer import enrich_test_failures
+from timmytest.analysis import analyze_project
 from timmytest.integrations.installer import integrate_project
-from timmytest.prompt.generator import generate_agent_prompt
 from timmytest.reports.json_export import export_audit_to_json
-from timmytest.runner.orchestrator import run_project_tests
+
+#: Ceiling for the client-supplied timeout: an agent that asks for a two-hour
+#: run would otherwise wedge the server, which serves one request at a time.
+MAX_TOOL_TIMEOUT = 900
+DEFAULT_TOOL_TIMEOUT = 120
+
+
+def _timeout_arg(arguments: dict[str, Any]) -> int:
+    """Clamp the caller's timeout into a sane range, tolerating bad input."""
+    try:
+        value = int(arguments.get("timeout_seconds") or DEFAULT_TOOL_TIMEOUT)
+    except (TypeError, ValueError):
+        return DEFAULT_TOOL_TIMEOUT
+    return max(5, min(value, MAX_TOOL_TIMEOUT))
+
 
 TOOLS_DEFINITIONS = [
     {
@@ -142,96 +151,38 @@ def _handle_tool_call(name: str, arguments: dict[str, Any]) -> str:
     if not project_dir.exists():
         return f"Error: Project path '{project_dir}' does not exist."
 
+    # Every analysis tool routes through the one shared orchestrator, so an MCP
+    # client gets exactly what the CLI would produce - including the project's
+    # own .timmytest.yml (custom command, ignore lists, timeout), which the
+    # previous hand-rolled copies in this module silently ignored.
     if name == "timmytest_check":
-        ecosystem, framework, default_cmd, configs = detect_ecosystem(project_dir)
-        source_modules, test_modules = scan_project_structure(project_dir, ecosystem, framework)
-        gaps, score = analyze_test_gaps(source_modules, test_modules, ecosystem, project_dir)
-
-        proj_info = ProjectInfo(
-            root_dir=str(project_dir),
-            project_name=project_dir.name,
-            ecosystem=ecosystem,
-            test_framework=framework,
-            config_files=configs,
-            test_command=default_cmd,
-            source_modules=source_modules,
-            test_modules=test_modules,
-            test_gaps=gaps,
-            total_source_files=len(source_modules),
-            total_test_files=len(test_modules),
-            readiness_score=score,
+        audit = analyze_project(
+            project_dir=project_dir,
+            execute_tests=True,
+            timeout_seconds=_timeout_arg(arguments),
+            filter_pattern=arguments.get("filter_pattern"),
         )
-
-        timeout = arguments.get("timeout_seconds", 60)
-        filter_pat = arguments.get("filter_pattern")
-
-        if test_modules:
-            test_run = run_project_tests(
-                root_dir=project_dir,
-                ecosystem=ecosystem,
-                framework=framework,
-                custom_cmd=default_cmd,
-                timeout_seconds=timeout,
-                filter_pattern=filter_pat,
-            )
-            test_run = enrich_test_failures(test_run)
-        else:
-            test_run = TestRunResult(
-                ecosystem=ecosystem,
-                framework=framework,
-                command=default_cmd,
-                total=0,
-                has_executed=False,
-            )
-
-        prompt = generate_agent_prompt(proj_info, test_run)
-        return prompt
+        return audit.agent_prompt
 
     elif name == "timmytest_scan":
-        ecosystem, framework, default_cmd, configs = detect_ecosystem(project_dir)
-        source_modules, test_modules = scan_project_structure(project_dir, ecosystem, framework)
-        gaps, score = analyze_test_gaps(source_modules, test_modules, ecosystem, project_dir)
-
-        proj_info = ProjectInfo(
-            root_dir=str(project_dir),
-            project_name=project_dir.name,
-            ecosystem=ecosystem,
-            test_framework=framework,
-            config_files=configs,
-            test_command=default_cmd,
-            source_modules=source_modules,
-            test_modules=test_modules,
-            test_gaps=gaps,
-            total_source_files=len(source_modules),
-            total_test_files=len(test_modules),
-            readiness_score=score,
-        )
-        test_run = TestRunResult(
-            ecosystem=ecosystem, framework=framework, command=default_cmd, total=0, has_executed=False
-        )
-        from timmytest.detector.models import ProjectAudit
-
-        audit = ProjectAudit(project=proj_info, test_run=test_run, agent_prompt="")
+        audit = analyze_project(project_dir=project_dir, execute_tests=False)
         return export_audit_to_json(audit)
 
     elif name == "timmytest_run":
-        ecosystem, framework, default_cmd, _ = detect_ecosystem(project_dir)
-        timeout = arguments.get("timeout_seconds", 60)
-        filter_pat = arguments.get("filter_pattern")
-
-        test_run = run_project_tests(
-            root_dir=project_dir,
-            ecosystem=ecosystem,
-            framework=framework,
-            custom_cmd=default_cmd,
-            timeout_seconds=timeout,
-            filter_pattern=filter_pat,
+        audit = analyze_project(
+            project_dir=project_dir,
+            execute_tests=True,
+            timeout_seconds=_timeout_arg(arguments),
+            filter_pattern=arguments.get("filter_pattern"),
         )
-        test_run = enrich_test_failures(test_run)
+        test_run = audit.test_run
+        if not test_run.has_executed:
+            return "No test files were found in this project, so nothing was executed."
 
-        # Build clean failure output
         out: list[str] = [
-            f"Test Execution: {test_run.passed} Passed, {test_run.failed} Failed, {test_run.skipped} Skipped (Total: {test_run.total})",
+            f"Test Execution: {test_run.passed} Passed, {test_run.failed} Failed, "
+            f"{test_run.errors} Suite Errors, {test_run.skipped} Skipped "
+            f"(Total: {test_run.total}, exit code {test_run.exit_code})",
         ]
         if test_run.failures:
             out.append(f"\nFailures ({len(test_run.failures)}):")
@@ -243,28 +194,8 @@ def _handle_tool_call(name: str, arguments: dict[str, Any]) -> str:
         return "\n".join(out)
 
     elif name == "timmytest_prompt":
-        ecosystem, framework, default_cmd, configs = detect_ecosystem(project_dir)
-        source_modules, test_modules = scan_project_structure(project_dir, ecosystem, framework)
-        gaps, score = analyze_test_gaps(source_modules, test_modules, ecosystem, project_dir)
-
-        proj_info = ProjectInfo(
-            root_dir=str(project_dir),
-            project_name=project_dir.name,
-            ecosystem=ecosystem,
-            test_framework=framework,
-            config_files=configs,
-            test_command=default_cmd,
-            source_modules=source_modules,
-            test_modules=test_modules,
-            test_gaps=gaps,
-            total_source_files=len(source_modules),
-            total_test_files=len(test_modules),
-            readiness_score=score,
-        )
-        test_run = TestRunResult(
-            ecosystem=ecosystem, framework=framework, command=default_cmd, total=0, has_executed=False
-        )
-        return generate_agent_prompt(proj_info, test_run)
+        audit = analyze_project(project_dir=project_dir, execute_tests=False)
+        return audit.agent_prompt
 
     elif name == "timmytest_integrate":
         force = arguments.get("force", False)
@@ -365,6 +296,16 @@ def process_jsonrpc_message(msg: dict[str, Any]) -> dict[str, Any] | None:
 
 def run_mcp_server() -> None:
     """Run the stdio MCP server loop."""
+    # MCP is a UTF-8 protocol, but a pipe on Windows inherits the console code
+    # page (cp1254 on Turkish systems), so a project path with an accented
+    # character could raise UnicodeDecodeError and kill the server mid-session.
+    import contextlib
+
+    for stream in (sys.stdin, sys.stdout):
+        if hasattr(stream, "reconfigure"):
+            with contextlib.suppress(Exception):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+
     sys.stderr.write(f"Starting TimmyTest MCP Server v{__version__} on stdio...\n")
     sys.stderr.flush()
 

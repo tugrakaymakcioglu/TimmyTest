@@ -5,7 +5,32 @@ import time
 from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, FailureDetail, TestFramework, TestRunResult
-from timmytest.runner.base import BaseRunner, execute_safe_subprocess
+from timmytest.runner.base import BaseRunner, execute_safe_subprocess, split_command
+
+PACKAGE_MANAGERS = {"npm", "pnpm", "yarn", "bun", "npx"}
+
+# "Tests:  1 failed, 4 passed, 5 total"   (Jest, colon + commas)
+# "      Tests  1 failed | 71 passed (72)" (Vitest, no colon + pipes)
+TESTS_SUMMARY_RE = re.compile(r"^[^\S\n]*Tests:?[^\S\n]+(\S.*)$", re.MULTILINE)
+# "  Test Files  1 failed | 4 passed (5)"  (Vitest, suite level)
+TEST_FILES_SUMMARY_RE = re.compile(r"^[^\S\n]*Test Files:?[^\S\n]+(\S.*)$", re.MULTILINE)
+COUNT_RE = re.compile(r"(\d+)\s+(passed|failed|skipped|todo|pending)\b")
+# Mocha: "  72 passing (2s)" / "  1 failing" / "  2 pending"
+MOCHA_RE = re.compile(r"^\s*(\d+)\s+(passing|failing|pending)\b", re.MULTILINE)
+
+
+def _counts_from_summary(line: str) -> dict[str, int]:
+    """Turn a Jest/Vitest summary fragment into {kind: count}.
+
+    Handles both separators the ecosystem uses - Jest's ``1 failed, 4 passed,
+    5 total`` and Vitest's ``1 failed | 71 passed | 2 skipped (74)`` - because a
+    single missing format here is the difference between a real report and a
+    dashboard full of zeroes.
+    """
+    counts: dict[str, int] = {}
+    for number, kind in COUNT_RE.findall(line):
+        counts[kind] = counts.get(kind, 0) + int(number)
+    return counts
 
 
 class NodeRunner(BaseRunner):
@@ -25,7 +50,15 @@ class NodeRunner(BaseRunner):
         filter_pattern: str | None = None,
     ) -> list[str]:
         if custom_cmd:
-            return [custom_cmd]  # Will be parsed safely by execute_safe_subprocess
+            args = split_command(custom_cmd)
+            # Only pass the name filter when the command is a runner that has
+            # one; appending -t to e.g. `node --test` would abort the run.
+            lowered = custom_cmd.lower()
+            if filter_pattern and ("vitest" in lowered or "jest" in lowered):
+                args.extend(["-t", filter_pattern])
+            elif filter_pattern and "mocha" in lowered:
+                args.extend(["--grep", filter_pattern])
+            return args
 
         # Detect package runner
         if (root_dir / "deno.json").exists() or (root_dir / "deno.jsonc").exists():
@@ -47,6 +80,21 @@ class NodeRunner(BaseRunner):
             args.extend(["--", "-t", filter_pattern])
         return args
 
+    @staticmethod
+    def _append_test_paths(cmd_args: list[str], test_paths: list[str]) -> list[str]:
+        """Append targeted test files, using ``--`` only where it is required.
+
+        ``npm test -- a.test.js`` needs the separator to reach the underlying
+        script, while ``npx vitest run -- a.test.js`` does not: vitest treats
+        everything after ``--`` as a positional filter anyway, and jest/mocha
+        take bare paths. Adding it unconditionally broke direct invocations.
+        """
+        if not test_paths:
+            return cmd_args
+        head = Path(cmd_args[0]).stem.lower() if cmd_args else ""
+        needs_separator = head in PACKAGE_MANAGERS and "--" not in cmd_args
+        return [*cmd_args, *(["--"] if needs_separator else []), *test_paths]
+
     def run_tests(
         self,
         root_dir: Path,
@@ -56,49 +104,59 @@ class NodeRunner(BaseRunner):
         test_paths: list[str] | None = None,
     ) -> TestRunResult:
         cmd_args = self._determine_node_cmd(root_dir, custom_cmd, filter_pattern)
-        display_cmd = custom_cmd if custom_cmd else " ".join(cmd_args)
-
-        # Append targeted test file paths for incremental runs.
-        if test_paths:
-            if custom_cmd:
-                import shlex
-
-                cmd_args = shlex.split(custom_cmd) + ["--", *test_paths]
-            else:
-                cmd_args.extend(["--", *test_paths])
-            display_cmd = " ".join(cmd_args)
+        # Targeted paths must reach the process that is actually spawned; the
+        # previous version rebuilt the argv and then executed the raw command
+        # string anyway, so incremental runs silently ran the whole suite.
+        cmd_args = self._append_test_paths(cmd_args, test_paths or [])
+        display_cmd = " ".join(cmd_args)
 
         start_time = time.time()
         exit_code, raw_output, is_timeout = execute_safe_subprocess(
-            custom_cmd or cmd_args,
+            cmd_args,
             cwd=root_dir,
             timeout_seconds=timeout_seconds,
         )
         duration = round(time.time() - start_time, 2)
 
+        framework = TestFramework.VITEST if "vitest" in display_cmd.lower() else TestFramework.JEST
+
         if is_timeout:
             return TestRunResult(
                 ecosystem=Ecosystem.NODE,
-                framework=TestFramework.JEST,
+                framework=framework,
                 command=display_cmd,
                 total=0,
                 failed=1,
+                duration_seconds=duration,
                 exit_code=124,
-                raw_output=f"Test execution timed out after {timeout_seconds} seconds.",
+                # Keep whatever the run managed to print: the partial output is
+                # usually the only clue about *where* it hung.
+                raw_output=f"Test execution timed out after {timeout_seconds} seconds.\n\n{raw_output}",
                 has_executed=True,
                 failures=[
                     FailureDetail(
                         test_name="Timeout",
                         error_type="TimeoutError",
                         message=f"Node test run exceeded {timeout_seconds}s limit",
-                        suggested_fix="Check for unresolved Promises or hanging server listeners.",
+                        traceback=raw_output[-1000:],
+                        suggested_fix=(
+                            "Raise the timeout (--timeout / timeout_seconds), or check for a watch-mode "
+                            "test script, unresolved Promises, or hanging server listeners."
+                        ),
                     )
                 ],
             )
 
         passed, failed, skipped, failures = self._parse_node_output(raw_output)
 
-        total = passed + failed + skipped
+        # A suite that fails to even load (import error, wrong test runner) is
+        # reported by Vitest at file level only - "Test Files 1 failed | 4 passed"
+        # with every *test* still green. Surfacing it as an error keeps the run
+        # honest instead of showing a clean 72/0 next to exit code 1.
+        suite_failed = self._parse_failed_suites(raw_output)
+        errors = suite_failed if failed == 0 else 0
+
+        total = passed + failed + skipped + errors
         if total == 0 and exit_code != 0:
             failed = 1
             failures.append(
@@ -110,15 +168,17 @@ class NodeRunner(BaseRunner):
                     suggested_fix="Run 'npm install' (or pnpm/yarn/bun) and check package.json 'scripts.test'.",
                 )
             )
+            total = 1
 
         return TestRunResult(
             ecosystem=Ecosystem.NODE,
-            framework=TestFramework.VITEST if "vitest" in display_cmd.lower() else TestFramework.JEST,
+            framework=framework,
             command=display_cmd,
             total=total,
             passed=passed,
             failed=failed,
             skipped=skipped,
+            errors=errors,
             duration_seconds=duration,
             exit_code=exit_code,
             failures=failures,
@@ -126,26 +186,39 @@ class NodeRunner(BaseRunner):
             has_executed=True,
         )
 
+    def _parse_failed_suites(self, output: str) -> int:
+        """Number of test *files* Vitest reports as failed."""
+        matches = TEST_FILES_SUMMARY_RE.findall(output)
+        if not matches:
+            return 0
+        return _counts_from_summary(matches[-1]).get("failed", 0)
+
     def _parse_node_output(self, output: str) -> tuple[int, int, int, list[FailureDetail]]:
         passed = 0
         failed = 0
         skipped = 0
         failures: list[FailureDetail] = []
 
-        # Jest / Vitest "Tests: 2 failed, 8 passed, 10 total"
-        test_summary = re.search(r"Tests:\s+(.*?)(?:\n|$)", output)
-        if test_summary:
-            line = test_summary.group(1)
-            f_m = re.search(r"(\d+)\s+failed", line)
-            p_m = re.search(r"(\d+)\s+passed", line)
-            s_m = re.search(r"(\d+)\s+skipped|\s*(\d+)\s+todo", line)
+        # Jest  "Tests:       1 failed, 4 passed, 5 total"
+        # Vitest "      Tests  1 failed | 71 passed | 2 skipped (74)"
+        # The last summary line wins - watch/rerun output repeats it.
+        summaries = TESTS_SUMMARY_RE.findall(output)
+        if summaries:
+            counts = _counts_from_summary(summaries[-1])
+            passed = counts.get("passed", 0)
+            failed = counts.get("failed", 0)
+            # todo/pending are not executed either; they belong with skipped.
+            skipped = counts.get("skipped", 0) + counts.get("todo", 0) + counts.get("pending", 0)
 
-            if f_m:
-                failed = int(f_m.group(1))
-            if p_m:
-                passed = int(p_m.group(1))
-            if s_m:
-                skipped = int(s_m.group(1) or s_m.group(2))
+        # Mocha spec reporter: "72 passing (2s)" / "1 failing" / "2 pending"
+        if passed == 0 and failed == 0 and skipped == 0:
+            for number, kind in MOCHA_RE.findall(output):
+                if kind == "passing":
+                    passed += int(number)
+                elif kind == "failing":
+                    failed += int(number)
+                else:
+                    skipped += int(number)
 
         # Node's built-in test runner (node --test / TAP output):
         #   # tests 2  # pass 2  # fail 0  # skipped 0  # todo 0
@@ -160,19 +233,10 @@ class NodeRunner(BaseRunner):
                 skipped = int(s_m.group(1)) if s_m else 0
                 skipped += int(t_m.group(1)) if t_m else 0
 
-        # Check for FAIL / ✕ blocks (Jest/Vitest).
-        fail_files = re.findall(r"FAIL\s+([^\n]+)", output)
-        if not fail_files:
-            fail_files = re.findall(r"✕\s+([^\n]+)", output)
-
-        # TAP failures: "not ok N - test name"
-        if not fail_files:
-            fail_files = re.findall(r"not ok\s+\d+\s*-\s*([^\n]+)", output)
-
-        for f_name in fail_files:
+        for name in self._failure_names(output):
             failures.append(
                 FailureDetail(
-                    test_name=f_name.strip(),
+                    test_name=name,
                     error_type="NodeTestFailure",
                     message="Test suite or case failed",
                     traceback="",
@@ -181,3 +245,32 @@ class NodeRunner(BaseRunner):
             )
 
         return passed, failed, skipped, failures
+
+    @staticmethod
+    def _failure_names(output: str) -> list[str]:
+        """Collect failing suite/case names, de-duplicated and in output order.
+
+        Vitest prints the same ``FAIL <file>`` line twice (run list and failure
+        section), and decorates it with a ``[ file ]`` suffix - emitting both
+        copies inflated the failure list with duplicates.
+        """
+        names: list[str] = []
+        seen: set[str] = set()
+
+        candidates: list[str] = []
+        candidates += re.findall(r"^\s*FAIL\s+([^\n]+)", output, re.MULTILINE)
+        candidates += re.findall(r"[✕×]\s+([^\n]+)", output)
+        if not candidates:
+            # TAP failures: "not ok N - test name"
+            candidates += re.findall(r"not ok\s+\d+\s*-\s*([^\n]+)", output)
+
+        for raw in candidates:
+            name = re.sub(r"\s*\[[^\]]*\]\s*$", "", raw.strip()).strip()
+            # Drop the trailing duration Vitest appends to failing cases - bare
+            # (`divides 3ms`) or parenthesised (`divides (1 ms)`), with or
+            # without a space before the unit.
+            name = re.sub(r"\s+\(?\d+(?:\.\d+)?\s*m?s\)?$", "", name).strip()
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+        return names

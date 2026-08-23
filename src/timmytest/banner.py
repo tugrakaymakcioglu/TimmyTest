@@ -48,9 +48,7 @@ def maximize_terminal() -> None:
         with contextlib.suppress(Exception):
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                ctypes.windll.kernel32.SetConsoleTitleW(
-                    "⚡ TimmyTest • Zero-Token AI Test Intelligence"
-                )
+                ctypes.windll.kernel32.SetConsoleTitleW("⚡ TimmyTest • Zero-Token AI Test Intelligence")
 
 
 def print_banner(show_subtitle: bool = True) -> None:

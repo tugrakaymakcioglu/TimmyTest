@@ -35,6 +35,7 @@ from timmytest.reports.console import (
 )
 from timmytest.reports.json_export import export_audit_to_json
 from timmytest.scaffolder.init_tests import initialize_test_scaffold
+from timmytest.walk import IGNORED_DIRS, iter_files
 
 app = typer.Typer(
     name="timmytest",
@@ -79,19 +80,27 @@ def main_callback(
             else:
                 print_banner()
         console.print("[bold cyan]Commands:[/bold cyan]")
-        console.print("  [bold green]check[/bold green]      Run test suite, analyze failures & gap diagnostics, generate AI prompts")
-        console.print("  [bold green]scan[/bold green]       Fast test-gap scanner without executing test suites")
-        console.print("  [bold green]run[/bold green]        Run tests with live feedback & CI error exit code propagation")
-        console.print("  [bold green]prompt[/bold green]     Extract failures and generate prompt directly for Claude / Cursor / AGY")
+        console.print(
+            "  [bold green]check[/bold green]      Run test suite, analyze failures & gap diagnostics, generate AI prompts"
+        )
+        console.print(
+            "  [bold green]scan[/bold green]       Fast test-gap scanner without executing test suites"
+        )
+        console.print(
+            "  [bold green]run[/bold green]        Run tests with live feedback & CI error exit code propagation"
+        )
+        console.print(
+            "  [bold green]prompt[/bold green]     Extract failures and generate prompt directly for Claude / Cursor / AGY"
+        )
         console.print("  [bold green]init[/bold green]       Scaffold missing test files automatically")
-        console.print("  [bold green]integrate[/bold green]  Configure repository with agent rules & MCP configs")
+        console.print(
+            "  [bold green]integrate[/bold green]  Configure repository with agent rules & MCP configs"
+        )
         console.print("  [bold green]agent[/bold green]      Direct zero-noise output for AI coding agents")
         console.print("  [bold green]ui[/bold green]         Launch the full-screen TimmyTest application")
         console.print("  [bold green]mcp[/bold green]        Start the Model Context Protocol (MCP) server\n")
         console.print("[dim]Run [bold]timmytest COMMAND --help[/bold] for detailed command options.[/dim]\n")
         raise typer.Exit()
-
-
 
 
 def _require(feature_key: str) -> None:
@@ -106,16 +115,44 @@ def _require(feature_key: str) -> None:
 
 
 def _get_project_mtimes(root: Path, config: TimmyConfig) -> dict[str, float]:
-    """Get modification timestamps of all tracked project files."""
+    """Get modification timestamps of all tracked project files.
+
+    Watch mode re-runs this every ``watch_interval`` seconds. Previously it only
+    skipped the user's own ``ignored_dirs`` (empty by default), so each tick
+    stat'ed the entire dependency tree - tens of thousands of files a second on
+    a normal Node project, for a poll that should be nearly free.
+    """
     mtimes: dict[str, float] = {}
-    for p in root.rglob("*"):
-        if p.is_file():
-            rel_parts = set(p.relative_to(root).parts)
-            if any(ign in rel_parts for ign in config.ignored_dirs):
-                continue
-            with contextlib.suppress(Exception):
-                mtimes[str(p)] = p.stat().st_mtime
+    ignored = set(IGNORED_DIRS) | set(config.ignored_dirs)
+    for path in iter_files(root, ignored):
+        with contextlib.suppress(OSError):
+            mtimes[str(path)] = path.stat().st_mtime
     return mtimes
+
+
+def _write_output(target: Path, content: str, label: str) -> None:
+    """Write a generated artefact, creating its directory and reporting failure.
+
+    ``--save-report reports/audit.md`` used to raise a raw traceback when the
+    directory did not exist, after the whole audit had already been paid for.
+    """
+    try:
+        if target.parent != Path():
+            target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[bold red]✗ Could not save {label}:[/bold red] {exc.strerror or exc}")
+        return
+    console.print(f"[bold green]✓ {label} saved to:[/bold green] {target}")
+
+
+def _failing_count(audit: ProjectAudit) -> int:
+    """Failures that must break CI: assertion failures *and* suite/collection errors.
+
+    Counting only ``failed`` let a suite that never loaded - every test in it
+    green, exit code 1 - pass a pipeline silently.
+    """
+    return audit.test_run.failed + audit.test_run.errors
 
 
 @app.command(name="check")
@@ -142,7 +179,11 @@ def check_command(
     ] = False,
     timeout: Annotated[
         int | None,
-        typer.Option("--timeout", "-t", help="Test execution timeout in seconds (default: 60, or timeout_seconds from config)"),
+        typer.Option(
+            "--timeout",
+            "-t",
+            help="Test execution timeout in seconds (default: 60, or timeout_seconds from config)",
+        ),
     ] = None,
     filter_pattern: Annotated[
         str | None,
@@ -158,7 +199,9 @@ def check_command(
     ] = False,
     safe_dry_run: Annotated[
         bool,
-        typer.Option("--safe", "--dry-run", help="Safe mode: analyze without running tests on untrusted code"),
+        typer.Option(
+            "--safe", "--dry-run", help="Safe mode: analyze without running tests on untrusted code"
+        ),
     ] = False,
     fail_under: Annotated[
         float | None,
@@ -174,11 +217,16 @@ def check_command(
     ] = False,
     since: Annotated[
         str | None,
-        typer.Option("--since", help="Run only tests affected by changes since a git ref (e.g. HEAD~1, main)"),
+        typer.Option(
+            "--since", help="Run only tests affected by changes since a git ref (e.g. HEAD~1, main)"
+        ),
     ] = None,
     coverage: Annotated[
         bool,
-        typer.Option("--coverage", help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)"),
+        typer.Option(
+            "--coverage",
+            help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)",
+        ),
     ] = False,
     coverage_file: Annotated[
         Path | None,
@@ -244,12 +292,10 @@ def check_command(
         print_prompt_panel(audit.agent_prompt, copied=copied)
 
         if save_prompt:
-            save_prompt.write_text(audit.agent_prompt, encoding="utf-8")
-            console.print(f"[bold green]✓ AI Agent Prompt saved to:[/bold green] {save_prompt}")
+            _write_output(save_prompt, audit.agent_prompt, "AI Agent Prompt")
 
         if save_report:
-            save_report.write_text(audit.summary_markdown, encoding="utf-8")
-            console.print(f"[bold green]✓ Audit Report saved to:[/bold green] {save_report}")
+            _write_output(save_report, audit.summary_markdown, "Audit Report")
 
         return audit
 
@@ -263,7 +309,9 @@ def check_command(
                 time.sleep(config.watch_interval)
                 current_mtimes = _get_project_mtimes(path.resolve(), config)
                 if current_mtimes != last_mtimes:
-                    console.print("\n[bold yellow]🔄 File change detected. Re-running audit...[/bold yellow]\n")
+                    console.print(
+                        "\n[bold yellow]🔄 File change detected. Re-running audit...[/bold yellow]\n"
+                    )
                     _execute_single_audit()
                     last_mtimes = current_mtimes
         except KeyboardInterrupt:
@@ -278,7 +326,7 @@ def check_command(
         )
         raise typer.Exit(code=1)
 
-    if audit.test_run.has_executed and audit.test_run.failed > 0 and config.fail_on_test_failure:
+    if audit.test_run.has_executed and _failing_count(audit) > 0 and config.fail_on_test_failure:
         raise typer.Exit(code=1)
 
 
@@ -294,7 +342,10 @@ def scan_command(
     ] = False,
     coverage: Annotated[
         bool,
-        typer.Option("--coverage", help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)"),
+        typer.Option(
+            "--coverage",
+            help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)",
+        ),
     ] = False,
     coverage_file: Annotated[
         Path | None,
@@ -344,7 +395,11 @@ def run_command(
     ] = Path("."),
     timeout: Annotated[
         int | None,
-        typer.Option("--timeout", "-t", help="Test execution timeout in seconds (default: 60, or timeout_seconds from config)"),
+        typer.Option(
+            "--timeout",
+            "-t",
+            help="Test execution timeout in seconds (default: 60, or timeout_seconds from config)",
+        ),
     ] = None,
     filter_pattern: Annotated[
         str | None,
@@ -372,11 +427,16 @@ def run_command(
     ] = False,
     since: Annotated[
         str | None,
-        typer.Option("--since", help="Run only tests affected by changes since a git ref (e.g. HEAD~1, main)"),
+        typer.Option(
+            "--since", help="Run only tests affected by changes since a git ref (e.g. HEAD~1, main)"
+        ),
     ] = None,
     coverage: Annotated[
         bool,
-        typer.Option("--coverage", help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)"),
+        typer.Option(
+            "--coverage",
+            help="Enable coverage-aware analysis (auto-detects coverage.json/cobertura.xml/lcov.info)",
+        ),
     ] = False,
     coverage_file: Annotated[
         Path | None,
@@ -442,14 +502,16 @@ def run_command(
                 time.sleep(config.watch_interval)
                 current_mtimes = _get_project_mtimes(path.resolve(), config)
                 if current_mtimes != last_mtimes:
-                    console.print("\n[bold yellow]🔄 File change detected. Re-running tests...[/bold yellow]\n")
+                    console.print(
+                        "\n[bold yellow]🔄 File change detected. Re-running tests...[/bold yellow]\n"
+                    )
                     _execute_run()
                     last_mtimes = current_mtimes
         except KeyboardInterrupt:
             console.print("\n[bold yellow]Stopping watch mode.[/bold yellow]")
             return
 
-    if audit.test_run.has_executed and audit.test_run.failed > 0 and config.fail_on_test_failure:
+    if audit.test_run.has_executed and _failing_count(audit) > 0 and config.fail_on_test_failure:
         raise typer.Exit(code=1)
 
 
@@ -491,7 +553,16 @@ def prompt_command(
         copied = copy_to_clipboard(audit.agent_prompt)
 
     if output_file:
-        output_file.write_text(audit.agent_prompt, encoding="utf-8")
+        # Mirror check/--save-prompt: writing into a not-yet-existing directory
+        # must create it, not crash after the whole audit has been paid for.
+        if output_file.parent != Path():
+            with contextlib.suppress(OSError):
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output_file.write_text(audit.agent_prompt, encoding="utf-8")
+        except OSError as exc:
+            console.print(f"[bold red]✗ Could not write prompt:[/bold red] {exc.strerror or exc}")
+            raise typer.Exit(code=1) from exc
         console.print(f"[bold green]✓ Prompt written to:[/bold green] {output_file}")
 
     if raw:
@@ -535,7 +606,9 @@ def integrate_command(
     ] = Path("."),
     cursor: Annotated[
         bool,
-        typer.Option("--cursor/--no-cursor", help="Generate Cursor AI rule files (.cursorrules, .cursor/rules/)"),
+        typer.Option(
+            "--cursor/--no-cursor", help="Generate Cursor AI rule files (.cursorrules, .cursor/rules/)"
+        ),
     ] = True,
     claude: Annotated[
         bool,
@@ -543,7 +616,10 @@ def integrate_command(
     ] = True,
     copilot: Annotated[
         bool,
-        typer.Option("--copilot/--no-copilot", help="Generate GitHub Copilot instructions (.github/copilot-instructions.md)"),
+        typer.Option(
+            "--copilot/--no-copilot",
+            help="Generate GitHub Copilot instructions (.github/copilot-instructions.md)",
+        ),
     ] = True,
     agents: Annotated[
         bool,
@@ -555,7 +631,9 @@ def integrate_command(
     ] = True,
     ci: Annotated[
         bool,
-        typer.Option("--ci/--no-ci", help="Generate GitHub Actions CI workflow (.github/workflows/timmytest.yml)"),
+        typer.Option(
+            "--ci/--no-ci", help="Generate GitHub Actions CI workflow (.github/workflows/timmytest.yml)"
+        ),
     ] = False,
     mcp: Annotated[
         bool,
@@ -563,7 +641,11 @@ def integrate_command(
     ] = True,
     force: Annotated[
         bool,
-        typer.Option("--force", "-f", help="Re-integrate even if TimmyTest rules are already present (appends; never overwrites existing content)"),
+        typer.Option(
+            "--force",
+            "-f",
+            help="Re-integrate even if TimmyTest rules are already present (appends; never overwrites existing content)",
+        ),
     ] = False,
     dry_run: Annotated[
         bool,
@@ -620,7 +702,9 @@ def integrate_command(
             rel = f.relative_to(root) if f.is_relative_to(root) else f
             console.print(f"  [dim]• {rel}[/dim]")
 
-    console.print("\n[bold cyan]🤖 AI agents in this repo are now pre-configured to test with zero token waste![/bold cyan]")
+    console.print(
+        "\n[bold cyan]🤖 AI agents in this repo are now pre-configured to test with zero token waste![/bold cyan]"
+    )
     console.print("[dim]Try running: 'timmytest check' or 'timmytest mcp'[/dim]\n")
 
 
@@ -717,4 +801,3 @@ def version_command(
 
 if __name__ == "__main__":
     app()
-

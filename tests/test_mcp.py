@@ -67,7 +67,9 @@ def test_mcp_tool_call_scan(temp_project_dir: Path):
 def test_mcp_tool_call_prompt(temp_project_dir: Path):
     src_dir = temp_project_dir / "src"
     src_dir.mkdir()
-    (src_dir / "service.py").write_text("class MyService:\n    def execute(self):\n        pass\n", encoding="utf-8")
+    (src_dir / "service.py").write_text(
+        "class MyService:\n    def execute(self):\n        pass\n", encoding="utf-8"
+    )
 
     msg = {
         "jsonrpc": "2.0",
@@ -103,6 +105,36 @@ def test_mcp_tool_call_integrate(temp_project_dir: Path):
     content = resp["result"]["content"][0]["text"]
     assert "Integrated TimmyTest" in content
     assert (temp_project_dir / ".cursorrules").exists()
+
+
+def test_mcp_timeout_argument_is_clamped():
+    """A client-supplied timeout must never wedge the single-threaded server."""
+    from timmytest.mcp.server import MAX_TOOL_TIMEOUT, _timeout_arg
+
+    assert _timeout_arg({}) > 0
+    assert _timeout_arg({"timeout_seconds": 10}) == 10
+    assert _timeout_arg({"timeout_seconds": 999_999}) == MAX_TOOL_TIMEOUT
+    assert _timeout_arg({"timeout_seconds": -5}) == 5
+    assert _timeout_arg({"timeout_seconds": "nonsense"}) > 0
+
+
+def test_mcp_honours_project_config(temp_project_dir: Path):
+    """MCP tools go through the shared orchestrator, so .timmytest.yml applies."""
+    (temp_project_dir / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (temp_project_dir / ".timmytest.yml").write_text("ignored_files:\n  - secret.py\n", encoding="utf-8")
+    (temp_project_dir / "secret.py").write_text("def hidden():\n    pass\n", encoding="utf-8")
+    (temp_project_dir / "visible.py").write_text("def shown():\n    pass\n", encoding="utf-8")
+
+    msg = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {"name": "timmytest_scan", "arguments": {"project_path": str(temp_project_dir)}},
+    }
+    content = process_jsonrpc_message(msg)["result"]["content"][0]["text"]
+
+    assert "visible.py" in content
+    assert "secret.py" not in content
 
 
 def test_mcp_unknown_method():
