@@ -3,32 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TimmyTest — Zero-Token Test Runner &amp; AST Test Gap Analyzer</title>
-<meta name="description" content="Stop burning tens of thousands of LLM tokens on test exploration. TimmyTest runs tests locally with 0 AI tokens, detects missing test modules with AST, and generates dense prompts for AI coding agents.">
-<meta name="keywords" content="TimmyTest, zero-token test runner, test gap analyzer, AI prompt generator, Claude Code, Cursor, Codex, Antigravity, pytest, vitest, cargo test, developer tools">
-<meta name="author" content="tugrakaymakcioglu">
+<title>TimmyTest — Zero-Token Test Runner & AST Test Gap Analyzer for AI Coding Agents</title>
+<meta name="description" content="TimmyTest runs your tests locally with 0 AI tokens, detects missing test modules with a deterministic AST analyzer, isolates failure root causes, and generates dense handoff prompts for Claude Code, Codex, Cursor, Copilot and Antigravity. 35+ ecosystems, MCP server included.">
+<meta name="keywords" content="TimmyTest, zero-token test runner, test gap analyzer, AST scanner, AI prompt generator, Claude Code, OpenAI Codex, Cursor, GitHub Copilot, Antigravity, MCP server, model context protocol, pytest, vitest, jest, cargo test, go test, coverage, CI exit codes, developer tools, test intelligence">
+<meta name="author" content="Tugra Kaymakcioglu">
 <link rel="canonical" href="https://tugrakaymakcioglu.github.io/TimmyTest/">
 <meta name="robots" content="index, follow">
 <meta property="og:type" content="website">
-<meta property="og:title" content="TimmyTest — Zero-Token Test Runner &amp; AI Prompt Generator">
-<meta property="og:description" content="Save 35k–80k tokens per coding session. Local pre-flight test runner and deterministic AST gap detector for AI coding agents.">
+<meta property="og:site_name" content="TimmyTest">
+<meta property="og:title" content="TimmyTest — Zero-Token Test Runner & AI Agent Prompt Generator">
+<meta property="og:description" content="Save 35k–80k tokens per session. Local test runner, deterministic AST gap analyzer and dense AI handoff prompts — 0 tokens, 35+ ecosystems, MCP server included.">
 <meta property="og:url" content="https://tugrakaymakcioglu.github.io/TimmyTest/">
 <meta property="og:image" content="https://raw.githubusercontent.com/tugrakaymakcioglu/TimmyTest/main/.github/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="TimmyTest — Zero-Token Test Runner &amp; AI Agent Intelligence">
-<meta name="twitter:description" content="Local-first test runner and AST gap analyzer generating copy-pasteable context prompts for AI coding agents.">
+<meta name="twitter:title" content="TimmyTest — Zero-Token Test Runner & AST Gap Analyzer">
+<meta name="twitter:description" content="Run tests locally with 0 AI tokens. Deterministic gap analysis + dense handoff prompts for Claude Code, Codex, Cursor & Antigravity.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/tugrakaymakcioglu/TimmyTest/main/.github/social-preview.png">
+<link rel="alternate" hreflang="en" href="https://tugrakaymakcioglu.github.io/TimmyTest/">
+<link rel="alternate" hreflang="tr" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.tr.md">
+<link rel="alternate" hreflang="zh-CN" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.zh-CN.md">
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; line-height: 1.6; background: #0d1117; color: #e6edf3; }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
-  h1 { font-size: 2.2rem; margin: 0 0 .25rem; color: #e3b341; }
-  .tagline { font-size: 1.15rem; color: #8b949e; margin: 0 0 1.5rem; }
-  pre, code { background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
-  pre { padding: 1rem; overflow-x: auto; }
-  code { padding: .15em .4em; font-family: ui-monospace, Consolas, monospace; font-size: .9em; }
-  .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: .65rem 1.1rem; border-radius: 6px; font-weight: 600; margin-right: .5rem; }
-  .btn.gh { background: #21262d; border: 1px solid #30363d; }
-  a { color: #58a6ff; }
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; line-height: 1.6; background: #0d1117; color: #e6edf3; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+  h1 { font-size: 2.4rem; margin: 0 0 .25rem; color: #e6edf3; letter-spacing: -.5px; }
+  h1 .accent { color: #e3b341; }
+  .tagline { font-size: 1.2rem; color: #8b949e; margin: 0 0 .5rem; }
+  .tagline.green { color: #3fb950; }
+  .langs { font-size: .95rem; margin-bottom: 2rem; }
+  .langs a { color: #58a6ff; text-decoration: none; margin-right: .75rem; }
+  .demo { border: 1px solid #30363d; border-radius: 12px; overflow: hidden; margin: 1.5rem 0 2rem; }
+  .demo img { display: block; width: 100%; }
+  h2 { color: #e3b341; font-size: 1.35rem; margin-top: 2.5rem; }
+  pre { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem 1.2rem; overflow-x: auto; }
+  code { font-family: ui-monospace, Cascadia Mono, Consolas, monospace; font-size: .92em; color: #a5d6ff; }
+  p code, li code { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: .1em .4em; }
+  .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: .7rem 1.2rem; border-radius: 8px; font-weight: 600; margin: .25rem .5rem .25rem 0; }
+  .btn.gh { background: #21262d; border: 1px solid #30363d; color: #e6edf3; }
+  .btn:hover { filter: brightness(1.15); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 1.1rem 1.2rem; }
+  .card b { color: #79c0ff; display: block; margin-bottom: .3rem; }
+  .card span { color: #8b949e; font-size: .95rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #30363d; padding: .5rem .8rem; text-align: left; }
+  th { background: #161b22; color: #e3b341; }
+  td { color: #c9d1d9; }
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #21262d; color: #8b949e; font-size: .92rem; }
+  .stat { color: #3fb950; font-weight: 700; }
 </style>
 <script type="application/ld+json">
 {
@@ -38,25 +63,71 @@
   "url": "https://tugrakaymakcioglu.github.io/TimmyTest/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows, macOS, Linux",
-  "description": "Zero-token terminal test runner, project test-gap analyzer, and AI agent prompt generator for Claude Code, Cursor, Codex, and Antigravity.",
-  "keywords": "test runner, ai agent, token saver, prompt generator, pytest, vitest, ast scanner",
-  "license": "https://www.apache.org/licenses/LICENSE-2.0",
-  "softwareVersion": "0.1.0",
-  "author": { "@type": "Organization", "name": "tugrakaymakcioglu" }
+  "description": "Zero-token test runner, AST test gap analyzer and AI agent prompt generator for Claude Code, OpenAI Codex, Cursor, Copilot and Antigravity. Supports 35+ ecosystems and ships an MCP server.",
+  "softwareVersion": "2.0.0",
+  "author": { "@type": "Person", "name": "Tugra Kaymakcioglu", "url": "https://github.com/tugrakaymakcioglu" },
+  "license": "https://opensource.org/licenses/Apache-2.0",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "downloadUrl": "https://pypi.org/project/timmytest/",
+  "keywords": "test runner, test gap analyzer, AST, AI coding agent, Claude Code, Codex, Cursor, MCP, pytest, vitest, cargo test, go test"
 }
 </script>
 </head>
 <body>
 <div class="wrap">
-  <h1>⚡ TimmyTest</h1>
-  <div class="tagline">Zero-Token Test Runner • AST Test Gap Detector • AI Agent Prompt Generator</div>
-  <p><a class="btn" href="https://pypi.org/project/timmytest/">Install from PyPI</a> <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest">View on GitHub</a></p>
-  <h2>⚡ Quick Start</h2>
-  <pre><code># 1. Complete project audit & copy AI prompt to clipboard
-timmytest check .
 
-# 2. Fast static gap scan
-timmytest scan /path/to/project</code></pre>
+  <h1>⚡ Timmy<span class="accent">Test</span></h1>
+  <p class="tagline">Zero-Token Test Runner • AST Test Gap Analyzer • AI Agent Prompt Generator</p>
+  <p class="tagline green">Runs your tests locally with 0 AI tokens — hands your agent a verified diagnosis instead of guesses.</p>
+  <p class="langs">
+    🌐 <a href="https://github.com/tugrakaymakcioglu/TimmyTest#-timmytest">English</a>
+    <a href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.tr.md">Türkçe</a>
+    <a href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.zh-CN.md">中文</a>
+  </p>
+
+  <div class="demo">
+    <img src="https://raw.githubusercontent.com/tugrakaymakcioglu/TimmyTest/main/docs/assets/timmytest-demo.gif" alt="TimmyTest terminal demo: project overview, test results, failure diagnosis, test gaps and AI agent handoff prompt" loading="lazy">
+  </div>
+
+  <a class="btn" href="https://github.com/tugrakaymakcioglu/TimmyTest">★ Star on GitHub</a>
+  <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest#-installation">Install</a>
+  <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.md#-quick-start">Quick Start</a>
+
+  <h2>Why TimmyTest?</h2>
+  <p>AI coding agents burn <b>15,000–88,000 tokens</b> exploring a codebase before they fix a single test.
+  TimmyTest does that exploration <b>locally, deterministically, with zero tokens</b>, then compresses the
+  findings into a ~400–900 token handoff prompt your agent can act on immediately.</p>
+
+  <div class="grid">
+    <div class="card"><b>⚡ 0 AI tokens</b><span>Test execution, gap analysis and diagnostics run 100% locally.</span></div>
+    <div class="card"><b>🔍 AST gap analysis</b><span>Every source module mapped to its tests; missing files flagged by priority.</span></div>
+    <div class="card"><b>🩺 Root-cause fixes</b><span>Rule-based suggestions from real tracebacks — expected vs actual.</span></div>
+    <div class="card"><b>🌍 35+ ecosystems</b><span>Python, JS/TS, Rust, Go, Java, .NET, Dart, Solidity and 27 more.</span></div>
+    <div class="card"><b>🔌 MCP server</b><span>Native tools for Claude Desktop/Code, Cursor, Zed, Windsurf.</span></div>
+    <div class="card"><b>🛡️ CI exit codes</b><span>Assertion failures AND unloadable suites break the pipeline.</span></div>
+  </div>
+
+  <h2>Quick start</h2>
+  <pre><code>pip install timmytest
+
+timmytest integrate   # agent rules + MCP config in one command
+timmytest check .     # full audit → prompt auto-copied to clipboard</code></pre>
+
+  <h2>Token savings per test-fixing session</h2>
+  <table>
+    <tr><th>Phase</th><th>AI agent alone</th><th>With TimmyTest</th></tr>
+    <tr><td>Stack discovery</td><td>💸 8k–15k tokens</td><td><span class="stat">⚡ 0 tokens</span></td></tr>
+    <tr><td>Missing test detection</td><td>💸 10k–25k tokens</td><td><span class="stat">⚡ 0 tokens</span></td></tr>
+    <tr><td>Test execution &amp; parsing</td><td>💸 12k–30k tokens</td><td><span class="stat">⚡ 0 tokens</span></td></tr>
+    <tr><td>Agent consumption</td><td>❌ 35k–88k+ tokens</td><td><span class="stat">✅ ~400–900 tokens</span></td></tr>
+  </table>
+
+  <footer>
+    Apache-2.0 · Built by <a href="https://github.com/tugrakaymakcioglu">Tugra Kaymakcioglu</a> ·
+    <a href="https://github.com/tugrakaymakcioglu/TimmyTest">GitHub</a> ·
+    <a href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/CHANGELOG.md">Changelog</a>
+  </footer>
+
 </div>
 </body>
 </html>
