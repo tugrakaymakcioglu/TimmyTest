@@ -19,7 +19,7 @@ TimmyTest 在本地运行现有测试，找出可能缺少的测试，并将失�
 Codex 或 Cursor 的简短提示词。本地命令不调用 AI API；将提示词发给代理时仍会消耗代理的 token。
 
 ```bash
-python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
 timmytest check .
 ```
 
@@ -121,7 +121,7 @@ timmytest run --only-failures --timeout 120
 
 ```bash
 # 当前安装方式：公开的 GitHub 源码
-python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
 timmytest check .
 ```
 
@@ -195,7 +195,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
       - run: timmytest check . --no-banner --save-report audit-report.md
       - uses: actions/upload-artifact@v4
         with: { name: timmytest-report, path: audit-report.md }

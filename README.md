@@ -21,7 +21,7 @@ short prompt you can hand to Claude Code, Codex or Cursor. The local scan and te
 the handoff prompt still consumes tokens when you send it to an agent.
 
 ```bash
-python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
 timmytest check .
 ```
 
@@ -125,7 +125,7 @@ timmytest run --only-failures --timeout 120
 
 ```bash
 # Current installation from the public GitHub source
-python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
 timmytest check .
 ```
 
@@ -255,7 +255,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
       - run: timmytest check . --no-banner --save-report audit-report.md
       - uses: actions/upload-artifact@v4
         with: { name: timmytest-report, path: audit-report.md }
