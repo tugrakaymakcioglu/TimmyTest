@@ -104,6 +104,7 @@ def test_a_fixture_file_is_not_a_test_suite():
 def test_a_test_named_file_without_parsed_functions_still_counts():
     """Languages whose test bodies the scanner cannot parse must not regress."""
     unparsed = _test_mod("tests/auth_test.sh", functions=[])
+    unparsed.line_count = 5
     assert _find_matching_test(_src("src/auth.py"), [unparsed]) is not None
 
 

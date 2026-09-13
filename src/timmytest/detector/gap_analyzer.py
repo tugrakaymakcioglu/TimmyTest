@@ -81,7 +81,8 @@ def _prepare_tests(test_modules: list[TestModule]) -> list[_PreparedTest]:
                 stem=stem,
                 clean_stem=clean_stem,
                 parent_names=frozenset(p.lower() for p in test_path.parts[:-1]),
-                usable=bool(test.test_functions) or named_like_test,
+                usable=bool(test.test_functions or test.imported_modules)
+                or (named_like_test and test.line_count > 0),
             )
         )
     return prepared
@@ -91,6 +92,7 @@ def _find_matching_test(
     source: SourceModule,
     test_modules: list[TestModule],
     prepared: list[_PreparedTest] | None = None,
+    require_import: bool = False,
 ) -> TestModule | None:
     """
     Find if a source module has a corresponding test file using exact naming,
@@ -106,6 +108,12 @@ def _find_matching_test(
 
     for entry in prepared if prepared is not None else _prepare_tests(test_modules):
         if not entry.usable:
+            continue
+        if require_import:
+            if entry.module.rel_path == source.rel_path and entry.module.test_functions:
+                return entry.module
+            if any(_import_targets_module(imp, source) for imp in entry.module.imported_modules):
+                return entry.module
             continue
 
         test_stem = entry.stem
@@ -191,12 +199,19 @@ def analyze_test_gaps(
     total_sources = len(source_modules)
 
     if total_sources == 0:
-        return [], 100.0
+        return [], 0.0
 
     prepared_tests = _prepare_tests(test_modules)
+    stem_counts: dict[str, int] = {}
+    for src in source_modules:
+        stem = Path(src.rel_path).stem.lower()
+        stem_counts[stem] = stem_counts.get(stem, 0) + 1
 
     for src in source_modules:
-        matching_test = _find_matching_test(src, test_modules, prepared_tests)
+        matching_test = _find_matching_test(
+            src, test_modules, prepared_tests,
+            require_import=stem_counts[Path(src.rel_path).stem.lower()] > 1,
+        )
         if matching_test:
             covered_count += 1
         else:

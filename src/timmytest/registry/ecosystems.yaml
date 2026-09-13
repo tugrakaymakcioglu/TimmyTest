@@ -66,7 +66,7 @@ ecosystems:
 
   - id: node
     name: Node.js / JavaScript / TypeScript
-    extensions: [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"]
+    extensions: [".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".vue", ".svelte", ".astro"]
     config_files:
       [package.json, deno.json, deno.jsonc, tsconfig.json, vitest.config.ts, vitest.config.js, jest.config.js, jest.config.ts, pnpm-lock.yaml, yarn.lock, bun.lockb, bun.lock]
     test_dirs: [tests, test, __tests__, specs, spec]
@@ -91,13 +91,13 @@ ecosystems:
         dependency_in: [vitest]
         script_contains: [vitest]
         command: "{runner} vitest run"
-        test_patterns: ["*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.test.tsx", "*.test.jsx"]
+        test_patterns: ["*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.test.tsx", "*.test.jsx", "*.test.mjs", "*.spec.mjs", "*.test.cjs", "*.spec.cjs", "*.test.mts", "*.spec.mts", "*.test.cts", "*.spec.cts"]
       - id: jest
         name: Jest
         dependency_in: [jest]
         script_contains: [jest]
         command: "{runner} jest"
-        test_patterns: ["*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.test.tsx", "*.test.jsx"]
+        test_patterns: ["*.test.ts", "*.test.js", "*.spec.ts", "*.spec.js", "*.test.tsx", "*.test.jsx", "*.test.mjs", "*.spec.mjs", "*.test.cjs", "*.spec.cjs", "*.test.mts", "*.spec.mts", "*.test.cts", "*.spec.cts"]
       - id: mocha
         name: Mocha
         dependency_in: [mocha]
@@ -112,7 +112,7 @@ ecosystems:
         name: package.json test script
         default: true
         command: "{pm} test"
-        test_patterns: ["*.test.js", "*.spec.js", "*.test.ts", "*.spec.ts"]
+        test_patterns: ["*.test.js", "*.spec.js", "*.test.ts", "*.spec.ts", "*.test.mjs", "*.spec.mjs", "*.test.cjs", "*.spec.cjs", "*.test.mts", "*.spec.mts", "*.test.cts", "*.spec.cts"]
 
   - id: rust
     name: Rust
