@@ -1,6 +1,7 @@
 """AST and regex-based source and test file scanner with multi-language AST extraction."""
 
 import ast
+import fnmatch
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,6 +14,7 @@ from timmytest.detector.models import (
     TestFramework,
     TestModule,
 )
+from timmytest.registry.loader import load_registry
 
 #: Re-exported for callers that have always imported it from here.
 IGNORED_DIRS = walk.IGNORED_DIRS
@@ -98,7 +100,9 @@ def iter_project_files(
             yield current / filename
 
 
-def _is_test_file(path: Path, root: Path | None = None) -> bool:
+def _is_test_file(
+    path: Path, root: Path | None = None, test_patterns: tuple[str, ...] = ()
+) -> bool:
     """Determine if a file is a test file.
 
     ``root`` bounds the directory-name check to the project. Without it, every
@@ -121,6 +125,16 @@ def _is_test_file(path: Path, root: Path | None = None) -> bool:
     if any(part in TEST_DIR_NAMES for part in parent_names):
         return True
 
+    # The registry's file patterns are the per-framework source of truth.
+    # Entries describing inline syntax (for example Rust's "#[test]") are not
+    # filenames and must not be fed to a glob matcher.
+    if any(
+        not any(char in pattern for char in " #{")
+        and fnmatch.fnmatchcase(name, pattern.lower())
+        for pattern in test_patterns
+    ):
+        return True
+
     return bool(
         name.startswith("test_")
         or name.startswith("test-")
@@ -140,23 +154,23 @@ def _is_test_file(path: Path, root: Path | None = None) -> bool:
         or name.endswith("test.cs")
         or name.endswith("test.java")
         # Kotlin / Scala / Swift / Dart / Elixir / Haskell
-        or name.endswith("Test.kt")
-        or name.endswith("Tests.kt")
-        or name.endswith("Spec.scala")
-        or name.endswith("Suite.scala")
-        or name.endswith("Test.scala")
-        or name.endswith("Tests.swift")
-        or name.endswith("Test.swift")
+        or name.endswith("test.kt")
+        or name.endswith("tests.kt")
+        or name.endswith("spec.scala")
+        or name.endswith("suite.scala")
+        or name.endswith("test.scala")
+        or name.endswith("tests.swift")
+        or name.endswith("test.swift")
         or name.endswith("_test.dart")
         or name.endswith("_test.exs")
-        or name.endswith("Spec.hs")
-        or name.endswith("Test.hs")
+        or name.endswith("spec.hs")
+        or name.endswith("test.hs")
         # C / C++
         or name.endswith("_test.c")
         or name.endswith("_test.cpp")
         or name.endswith("_test.cc")
-        or name.endswith("Test.cpp")
-        or name.endswith("Test.cc")
+        or name.endswith("test.cpp")
+        or name.endswith("test.cc")
         # Lua / Crystal / Clojure
         or name.endswith("_spec.lua")
         or name.endswith("_spec.cr")
@@ -636,9 +650,17 @@ def scan_project_structure(
         ".v",
     }
 
+    registry = load_registry()
+    selected = next((entry for entry in registry["ecosystems"] if entry.get("id") == ecosystem.value), {})
+    valid_extensions.update(str(ext).lower() for ext in selected.get("extensions", []))
+    selected_framework = next(
+        (entry for entry in selected.get("frameworks", []) if entry.get("id") == framework.value), {}
+    )
+    test_patterns = tuple(str(pattern) for pattern in selected_framework.get("test_patterns", []))
+
     for item in iter_project_files(root, effective_ignored_dirs, effective_ignored_files, valid_extensions):
         rel_path = item.relative_to(root).as_posix()
-        is_test = _is_test_file(item, root)
+        is_test = _is_test_file(item, root, test_patterns)
 
         if is_test:
             if item.suffix == ".py":
@@ -661,6 +683,22 @@ def scan_project_structure(
                 funcs, details, classes, imports, lines = _parse_python_source(item)
             else:
                 funcs, details, classes, imports, lines = _parse_generic_source(item)
+
+            # Rust unit tests commonly live beside the implementation in the
+            # same .rs file. Keep the file as source, and record its test blocks
+            # separately so a real inline test can be associated with it.
+            if item.suffix.lower() == ".rs":
+                inline_tests, _, _ = _parse_generic_test(item)
+                if inline_tests:
+                    test_modules.append(
+                        TestModule(
+                            rel_path=rel_path,
+                            abs_path=str(item),
+                            framework=framework,
+                            test_functions=inline_tests,
+                            line_count=lines,
+                        )
+                    )
 
             lower_name = item.stem.lower()
             is_entry = lower_name in {"main", "app", "cli", "index", "server", "runner"}

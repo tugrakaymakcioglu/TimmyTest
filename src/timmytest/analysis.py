@@ -126,7 +126,7 @@ def analyze_project(
     )
 
     # 4. Execute tests if requested
-    if execute_tests and test_modules:
+    if execute_tests and test_cmd:
         # `timeout_seconds` is already resolved by the caller when it can be; the
         # config value is the fallback for callers that pass 0/None.
         effective_timeout = timeout_seconds or cfg.timeout_seconds
