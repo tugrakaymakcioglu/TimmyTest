@@ -651,9 +651,9 @@ def scan_project_structure(
     }
 
     registry = load_registry()
-    selected = next((entry for entry in registry["ecosystems"] if entry.get("id") == ecosystem.value), {})
+    selected: dict = next((entry for entry in registry["ecosystems"] if entry.get("id") == ecosystem.value), {})
     valid_extensions.update(str(ext).lower() for ext in selected.get("extensions", []))
-    selected_framework = next(
+    selected_framework: dict = next(
         (entry for entry in selected.get("frameworks", []) if entry.get("id") == framework.value), {}
     )
     test_patterns = tuple(str(pattern) for pattern in selected_framework.get("test_patterns", []))
