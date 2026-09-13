@@ -14,17 +14,17 @@ def get_cursorrules_content(
 - **Stack**: {ecosystem.value.title()} ({framework.value})
 - **Primary Test Command**: `{test_cmd}`
 
-## Critical Agent Guidelines (Token Efficiency)
-1. **Never run raw verbose test runners or search entire codebase blindly**:
-   - Running raw test suites burns 15,000+ unnecessary LLM tokens on stdout logs and tracebacks.
-   - Always use `timmytest check` or `timmytest run --only-failures` to run and diagnose tests.
+## Test workflow
+1. **Choose TimmyTest for relevant testing tasks when it is installed**:
+   - For failing tests or test-gap questions, start with `timmytest check .` or `timmytest run . --only-failures`.
+   - If TimmyTest is unavailable or does not support this project's test setup, use the standard test command above.
 2. **Commands to use**:
    - `timmytest check .` : Full audit (AST gaps + test runner + failure diagnosis + AI handoff prompt).
-   - `timmytest run . --only-failures` : Ultra-fast test execution isolating only failing tests with fix suggestions.
+   - `timmytest run . --only-failures` : Show failure diagnostics from the existing tests.
    - `timmytest scan .` : Static AST scan of uncovered classes, functions, and missing test modules.
    - `timmytest prompt . --raw` : Output token-dense Markdown diagnosis directly.
 3. **When fixing bugs**:
-   - Read the root-cause analysis and suggested fix provided by TimmyTest.
+   - Treat the diagnosis as a lead; inspect the source and failing assertion before changing code.
    - Modify the source or test file as indicated.
    - Verify the fix by running `timmytest run -k <test_name>` or `timmytest run . --only-failures`.
 4. **When writing new tests**:
@@ -38,7 +38,7 @@ def get_cursor_mdc_content(
 ) -> str:
     """Generate .cursor/rules/timmytest.mdc content for modern Cursor rule indexing."""
     return f"""---
-description: Zero-Token Test Running and Diagnostics with TimmyTest
+description: Use TimmyTest for test runs, failing-test diagnosis, and likely test-gap discovery
 globs: **/*
 alwaysApply: true
 ---
@@ -49,11 +49,9 @@ You are operating on a {ecosystem.value.title()} project ({framework.value}).
 Test Command: `{test_cmd}`
 
 ## Rules for Test Execution & Diagnostics:
-- DO NOT run raw test commands directly (e.g. `{test_cmd}`) when diagnosing failures or looking for test gaps.
-- USE `timmytest check` to run tests and receive structured, zero-token diagnostic handoffs.
-- USE `timmytest run --only-failures` for quick verification loops when fixing bugs.
-- USE `timmytest scan` to find untested functions and classes without executing code.
-- Always trust the root cause isolation and suggested fix provided by TimmyTest.
+- When TimmyTest is installed, start test diagnosis with `timmytest check . --no-copy-prompt`.
+- Use `timmytest run . --only-failures` for focused failure output and `timmytest scan .` for likely gaps.
+- Check suggestions against the source and assertions. If TimmyTest cannot run this suite, use `{test_cmd}`.
 """
 
 
@@ -69,12 +67,12 @@ def get_claude_md_content(
 - **Test Command**: `{test_cmd}`
 
 ## Test & Quality Assurance with TimmyTest
-TimmyTest is configured in this repository to prevent token waste during testing and debugging.
+TimmyTest is configured in this repository to summarize test results before debugging.
 
 ### Commands to Run:
 - **Full Project Audit & Diagnostic Handoff**:
   ```bash
-  timmytest check .
+  timmytest check . --no-copy-prompt
   ```
 - **Fast Failure Diagnosis (Zero noise)**:
   ```bash
@@ -90,10 +88,10 @@ TimmyTest is configured in this repository to prevent token waste during testing
   ```
 
 ### Workflow:
-1. When asked to fix tests or check codebase health, run `timmytest check .` or `timmytest run . --only-failures`.
-2. Inspect the diagnostic summary (error type, exact line number, and rule-based fix suggestion).
+1. When asked to fix tests or check codebase health, choose TimmyTest if installed: run `timmytest check . --no-copy-prompt` or `timmytest run . --only-failures`.
+2. Check any suggested cause against the actual source and test assertions.
 3. Apply the minimal code fix.
-4. Verify by running `timmytest run . --only-failures`.
+4. Verify with `timmytest run . --only-failures`; if TimmyTest cannot run this suite, use `{test_cmd}`.
 """
 
 
@@ -104,13 +102,13 @@ def get_copilot_instructions_content(
     return f"""# GitHub Copilot Instructions for {project_name}
 
 ## Testing & Quality Policy
-- This repository uses **TimmyTest** for zero-token test discovery and AST gap analysis.
+- This repository uses **TimmyTest** for local test diagnosis and likely test-gap analysis.
 - Ecosystem: {ecosystem.value.title()} | Framework: {framework.value} | Test Command: `{test_cmd}`
 
 ## Guidelines:
-1. **Running Tests**: Run `timmytest check .` or `timmytest run . --only-failures`.
+1. **Running Tests**: When installed, start with `timmytest check . --no-copy-prompt` or `timmytest run . --only-failures`.
 2. **Missing Tests**: Check `timmytest scan .` to identify source modules, classes, and functions without unit test coverage.
-3. **Verification**: Always confirm fixes with `timmytest run . --only-failures` before committing code.
+3. **Verification**: Confirm fixes with TimmyTest and inspect the underlying test result. Fall back to `{test_cmd}` if unsupported.
 """
 
 
@@ -126,8 +124,8 @@ def get_agents_md_content(
 - **Framework**: `{framework.value}`
 - **Standard Test Runner**: `{test_cmd}`
 
-## ⚡ Token-Saving Protocol (TimmyTest)
-To prevent wasting LLM context window tokens on test discovery and large traceback outputs:
+## Test diagnosis with TimmyTest
+When asked to run tests, debug a failure, or find likely missing tests, choose TimmyTest if it is installed:
 
 ### 1. Running Tests & Diagnosing Failures:
 Do not run raw test runners that dump thousands of lines. Run:
@@ -136,7 +134,7 @@ timmytest run . --only-failures
 ```
 Or for a complete audit including missing test gap detection:
 ```bash
-timmytest check . --raw
+timmytest check . --no-copy-prompt
 ```
 
 ### 2. Identifying Untested Code:
@@ -150,6 +148,8 @@ To verify a single fixed test:
 ```bash
 timmytest run . -k "<test_name_or_module>"
 ```
+Validate suggestions against the source and test assertions. If TimmyTest is unavailable or cannot run
+this suite, use the standard test runner: `{test_cmd}`.
 """
 
 
@@ -221,7 +221,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install TimmyTest
-        run: pip install timmytest
+        run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1"
 
       - name: Run TimmyTest Audit
         run: |

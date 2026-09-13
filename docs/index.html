@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TimmyTest — Zero-Token Test Runner & AST Test Gap Analyzer for AI Coding Agents</title>
-<meta name="description" content="TimmyTest runs your tests locally with 0 AI tokens, detects missing test modules with a deterministic AST analyzer, isolates failure root causes, and generates dense handoff prompts for Claude Code, Codex, Cursor, Copilot and Antigravity. 35+ ecosystems, MCP server included.">
+<meta name="description" content="TimmyTest is a local test runner for AI coding agents. Run existing tests, inspect likely test gaps, and hand a concise failure report to Claude Code, Codex or Cursor.">
 <meta name="keywords" content="TimmyTest, zero-token test runner, test gap analyzer, AST scanner, AI prompt generator, Claude Code, OpenAI Codex, Cursor, GitHub Copilot, Antigravity, MCP server, model context protocol, pytest, vitest, jest, cargo test, go test, coverage, CI exit codes, developer tools, test intelligence">
 <meta name="author" content="Tugra Kaymakcioglu">
 <link rel="canonical" href="https://tugrakaymakcioglu.github.io/TimmyTest/">
@@ -21,9 +21,6 @@
 <meta name="twitter:title" content="TimmyTest — Zero-Token Test Runner & AST Gap Analyzer">
 <meta name="twitter:description" content="Run tests locally with 0 AI tokens. Deterministic gap analysis + dense handoff prompts for Claude Code, Codex, Cursor & Antigravity.">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/tugrakaymakcioglu/TimmyTest/main/.github/social-preview.png">
-<link rel="alternate" hreflang="en" href="https://tugrakaymakcioglu.github.io/TimmyTest/">
-<link rel="alternate" hreflang="tr" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.tr.md">
-<link rel="alternate" hreflang="zh-CN" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.zh-CN.md">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -64,7 +61,7 @@
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows, macOS, Linux",
   "description": "Zero-token test runner, AST test gap analyzer and AI agent prompt generator for Claude Code, OpenAI Codex, Cursor, Copilot and Antigravity. Supports 35+ ecosystems and ships an MCP server.",
-  "softwareVersion": "2.0.0",
+  "softwareVersion": "2.0.1",
   "author": { "@type": "Person", "name": "Tugra Kaymakcioglu", "url": "https://github.com/tugrakaymakcioglu" },
   "license": "https://opensource.org/licenses/Apache-2.0",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -92,6 +89,7 @@
   <a class="btn" href="#quick-start">Try TimmyTest</a>
   <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest">View source on GitHub</a>
   <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.md#-quick-start">Quick Start</a>
+  <a class="btn gh" href="ai-agent-testing.html">AI agent testing guide</a>
 
   <h2>Why TimmyTest?</h2>
   <p>TimmyTest detects the test setup, runs your existing suite and turns failures and likely test gaps into
@@ -109,13 +107,18 @@
 
   <h2 id="quick-start">Quick start</h2>
   <p>From a terminal in a project that already has tests:</p>
-  <pre><code>python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
+  <pre><code>python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1"
 timmytest check .</code></pre>
   <p>The package is currently installed from its public GitHub source. PyPI publication is pending.
   See the <a href="https://github.com/tugrakaymakcioglu/TimmyTest#-live-demo">demo and example output</a>
   before trying it on your own project.</p>
   <p>If installation fails or the report is unclear, <a href="https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose">tell us what happened</a>
   with your OS, command and a redacted output sample.</p>
+
+  <h2>Testing during vibe coding</h2>
+  <p>When an AI coding agent changes a repository, TimmyTest can run the existing tests and give the agent
+  a smaller failure report before it starts debugging. Its <a href="ai-agent-testing.html">agent testing guide</a>
+  shows when to choose the CLI, when to use the MCP tools, and when to fall back to the project's own runner.</p>
 
   <footer>
     Apache-2.0 · Built by <a href="https://github.com/tugrakaymakcioglu">Tugra Kaymakcioglu</a> ·

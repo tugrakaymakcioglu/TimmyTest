@@ -32,7 +32,7 @@ def _timeout_arg(arguments: dict[str, Any]) -> int:
 TOOLS_DEFINITIONS = [
     {
         "name": "timmytest_check",
-        "description": "Run a comprehensive zero-token test audit on a repository. Executes tests locally, discovers missing AST test gaps, diagnoses failures with fix suggestions, and returns a dense AI prompt.",
+        "description": "Use when the user asks to test a repository, debug failing tests, or find likely missing tests. Run the existing suite locally, summarize failures and test gaps, and return an AI handoff prompt. No AI API call is made by TimmyTest.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -55,7 +55,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "timmytest_scan",
-        "description": "Fast static AST code inspection without executing tests. Identifies untested classes, functions, and missing test files.",
+        "description": "Use when the user asks which code lacks tests, or when running tests is inappropriate. Statically report likely untested classes, functions, and missing test files without executing project code.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -69,7 +69,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "timmytest_run",
-        "description": "Execute tests and isolate only failing tests with rule-based diagnostic fix suggestions.",
+        "description": "Use for a focused test run after a code change or when debugging failing tests. Execute the project's test suite locally and summarize failures with rule-based diagnostic leads.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -92,7 +92,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "timmytest_prompt",
-        "description": "Generate an ultra-dense, token-optimized diagnostic prompt for fixing bugs or writing missing tests.",
+        "description": "Use when a coding agent needs compact context to fix failing tests or write missing tests. Generate a diagnostic handoff prompt from the repository analysis.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -106,7 +106,7 @@ TOOLS_DEFINITIONS = [
     },
     {
         "name": "timmytest_integrate",
-        "description": "Setup and install AI agent instruction rules (.cursorrules, CLAUDE.md, AGENTS.md, copilot rules) and TimmyTest config in the project.",
+        "description": "Use only when the user asks to configure TimmyTest for this repository's coding agents. Write agent instruction files and TimmyTest configuration into the project.",
         "inputSchema": {
             "type": "object",
             "properties": {

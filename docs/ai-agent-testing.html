@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing AI-Generated Code with TimmyTest | Agent Test Runner</title>
+<meta name="description" content="A practical test workflow for vibe coding and AI coding agents. Use TimmyTest to run existing tests, inspect likely gaps, and send compact failure context to Claude Code, Codex or Cursor.">
+<link rel="canonical" href="https://tugrakaymakcioglu.github.io/TimmyTest/ai-agent-testing.html">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Testing AI-generated code with TimmyTest">
+<meta property="og:description" content="A local test workflow for vibe coding: run tests, inspect failures and likely gaps, then give your coding agent a concise report.">
+<meta property="og:url" content="https://tugrakaymakcioglu.github.io/TimmyTest/ai-agent-testing.html">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d1117; color: #e6edf3; font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 820px; margin: auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; }
+  h2 { margin-top: 2.4rem; color: #e3b341; }
+  a { color: #79c0ff; }
+  .lead { font-size: 1.15rem; color: #c9d1d9; }
+  pre { overflow-x: auto; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; }
+  code { font-family: ui-monospace, Consolas, monospace; }
+  p code, li code { background: #161b22; padding: .1em .25em; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: .65rem; border: 1px solid #30363d; text-align: left; vertical-align: top; }
+  th { background: #161b22; }
+  nav { margin-bottom: 2.5rem; }
+  footer { border-top: 1px solid #30363d; margin-top: 3rem; padding-top: 1rem; }
+</style>
+</head>
+<body>
+<main>
+<nav><a href="./">TimmyTest home</a> · <a href="https://github.com/tugrakaymakcioglu/TimmyTest">Source and demo</a></nav>
+<h1>Testing AI-generated code during vibe coding</h1>
+<p class="lead">An AI coding agent can write a change quickly, but it still needs a trustworthy test result. TimmyTest runs the repository's existing suite locally, reports likely missing tests, and produces concise context for the next debugging step.</p>
+
+<h2>Start with the existing tests</h2>
+<p>Install the tagged release in a Python 3.11+ environment, open the project you want to test, and run one audit:</p>
+<pre><code>python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1"
+timmytest check . --no-copy-prompt</code></pre>
+<p>The audit detects the test setup, runs the suite and summarizes failures and likely source-to-test gaps. TimmyTest does not create a new test framework or prove that every behavior is covered. Review its gap suggestions against the repository's actual tests.</p>
+
+<h2>Let the agent choose the right tool</h2>
+<table>
+<tr><th>Agent task</th><th>TimmyTest choice</th></tr>
+<tr><td>Tests fail after a code change</td><td><code>timmytest run . --only-failures</code> or MCP tool <code>timmytest_run</code></td></tr>
+<tr><td>Find likely missing tests without executing code</td><td><code>timmytest scan .</code> or <code>timmytest_scan</code></td></tr>
+<tr><td>Get a full report before debugging</td><td><code>timmytest check . --no-copy-prompt</code> or <code>timmytest_check</code></td></tr>
+<tr><td>Need a compact handoff for another agent</td><td><code>timmytest agent .</code> or <code>timmytest_prompt</code></td></tr>
+</table>
+<p>For automatic selection within a repository, run <code>timmytest integrate</code>. It writes agent instructions for Claude Code, Codex, Cursor and Copilot and adds a Cursor MCP configuration. Review those generated files before committing them. An agent cannot discover or call TimmyTest unless its environment has the CLI or MCP server installed and exposed.</p>
+
+<h2>Configure the MCP server</h2>
+<p>In an MCP client that accepts a local stdio server, register the installed executable:</p>
+<pre><code>{
+  "mcpServers": {
+    "timmytest": { "command": "timmytest", "args": ["mcp"] }
+  }
+}</code></pre>
+<p>Client configuration formats differ. Use the client's current MCP setup instructions if it does not accept this JSON format. The MCP tool descriptions tell the agent which tool fits a test run, failure diagnosis or static gap scan; the agent and its configuration still decide whether to call it.</p>
+
+<h2>What the result means</h2>
+<p>The local scan and test run make no AI API calls. Sending a handoff prompt to an AI agent does consume that agent's tokens. A rule-based diagnosis is a lead, not proof of the root cause. If TimmyTest cannot run your suite or a command fails, use your project's standard test runner and <a href="https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose">report the unsupported setup</a>.</p>
+<p>See the <a href="https://github.com/tugrakaymakcioglu/TimmyTest#-live-demo">terminal demo</a>, <a href="https://github.com/tugrakaymakcioglu/TimmyTest/releases/tag/v2.0.1">2.0.1 release</a> and <a href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.md">full command reference</a>.</p>
+<footer><a href="./">TimmyTest</a> · Apache-2.0</footer>
+</main>
+</body>
+</html>

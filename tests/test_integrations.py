@@ -41,12 +41,17 @@ def test_template_generators():
 
     agents = get_agents_md_content("MyProject", Ecosystem.GO, TestFramework.GO_TEST, "go test ./...")
     assert "Universal AI Agent Guide" in agents
+    assert "timmytest check . --no-copy-prompt" in agents
+    assert "timmytest check . --raw" not in agents
+    assert "go test ./..." in agents
 
     yml = get_timmytest_yml_content(Ecosystem.PYTHON, "pytest -ra")
     assert "timeout_seconds" in yml
 
     ci = get_github_workflow_content()
     assert "actions/setup-python" in ci
+    assert "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1" in ci
+    assert "run: pip install timmytest" not in ci
 
     mcp = get_mcp_config_snippet()
     assert "timmytest" in mcp["mcpServers"]

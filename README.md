@@ -21,7 +21,7 @@ short prompt you can hand to Claude Code, Codex or Cursor. The local scan and te
 the handoff prompt still consumes tokens when you send it to an agent.
 
 ```bash
-python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1"
 timmytest check .
 ```
 
@@ -31,7 +31,7 @@ Install from GitHub for now. The package is not yet available on PyPI; the `pip 
 If the first run fails or the report is unclear, [open an issue](https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose)
 with the command, operating system and a redacted output sample. Real project feedback will guide the next release.
 
-[🚀 Quick Start](#-quick-start) · [🎬 Demo](#-live-demo) · [🔌 MCP Server](#-model-context-protocol-mcp-server) · [📦 Install](#-installation) · [💰 Token Savings](#-why-timmytest-the-token-drain-problem)
+[🚀 Quick Start](#-quick-start) · [🎬 Demo](#-live-demo) · [🤖 AI agent testing guide](https://tugrakaymakcioglu.github.io/TimmyTest/ai-agent-testing.html) · [🔌 MCP Server](#-model-context-protocol-mcp-server) · [📦 Install](#-installation)
 
 </div>
 
@@ -125,7 +125,7 @@ timmytest run --only-failures --timeout 120
 
 ```bash
 # Current installation from the public GitHub source
-python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1"
 timmytest check .
 ```
 
@@ -255,7 +255,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.0"
+      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git@v2.0.1"
       - run: timmytest check . --no-banner --save-report audit-report.md
       - uses: actions/upload-artifact@v4
         with: { name: timmytest-report, path: audit-report.md }
