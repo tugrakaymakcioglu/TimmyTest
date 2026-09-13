@@ -8,7 +8,6 @@
 
 **English** · [Türkçe](README.tr.md) · [中文](README.zh-CN.md)
 
-[![PyPI](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftugrakaymakcioglu%2FTimmyTest%2Fmain%2Fpyproject.toml&query=project.version&logo=pypi&logoColor=white&label=PyPI&color=blue)](https://github.com/tugrakaymakcioglu/TimmyTest)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/tugrakaymakcioglu/TimmyTest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tugrakaymakcioglu/TimmyTest/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-213%20passing-brightgreen?logo=pytest&logoColor=white)](tests/)
@@ -16,10 +15,21 @@
 [![MCP](https://img.shields.io/badge/MCP-protocol%20ready-purple?logo=json&logoColor=white)](#-model-context-protocol-mcp-server)
 [![Platforms](https://img.shields.io/badge/OS-Windows%20%7C%20macOS%20%7C%20Linux-blue?logo=windows95&logoColor=white)](#-installation)
 
-**Stop burning 15k–80k tokens per session on test exploration.**
-TimmyTest runs your tests locally with **0 AI tokens**, maps every source module to its tests with a
-deterministic AST analyzer, isolates failure root causes with rule-based fixes, and hands your AI coding
-agent a dense, copy-pasteable diagnostic prompt — in under 2 seconds.
+**Give your coding agent a useful test report before it starts debugging.**
+TimmyTest runs your existing tests locally, identifies likely missing tests and summarizes failures in a
+short prompt you can hand to Claude Code, Codex or Cursor. The local scan and test run do not call an AI API;
+the handoff prompt still consumes tokens when you send it to an agent.
+
+```bash
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .
+```
+
+Install from GitHub for now. The package is not yet available on PyPI; the `pip install timmytest` and
+`uvx timmytest` commands will work only after a PyPI release.
+
+If the first run fails or the report is unclear, [open an issue](https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose)
+with the command, operating system and a redacted output sample. Real project feedback will guide the next release.
 
 [🚀 Quick Start](#-quick-start) · [🎬 Demo](#-live-demo) · [🔌 MCP Server](#-model-context-protocol-mcp-server) · [📦 Install](#-installation) · [💰 Token Savings](#-why-timmytest-the-token-drain-problem)
 
@@ -50,24 +60,23 @@ Real terminal output — `timmytest check` on a demo Python project with 1 faili
 
 ## 💡 Why TimmyTest? The Token-Drain Problem
 
-When AI coding agents (Claude Code, OpenAI Codex, Antigravity, Cursor, Copilot, Gemini CLI) are asked to test or fix code, they typically:
+When AI coding agents (Claude Code, OpenAI Codex, Antigravity, Cursor, Copilot, Gemini CLI) are asked to test or fix code, they may:
 
-1. Burn **15,000–35,000 tokens** listing directories and probing for test configs.
+1. Spend context listing directories and probing for test configs.
 2. Guess test runner commands, hit environment errors, and re-read entire test logs.
 3. Waste the context window on raw stdout instead of fixing the actual bug.
 
-### 💰 Token Cost & Efficiency Comparison
+### What runs locally
 
-| Phase | AI Agent Alone | With TimmyTest Pre-flight |
+| Phase | Without TimmyTest | With TimmyTest preflight |
 | :--- | :--- | :--- |
-| Project & stack discovery | 💸 8,000–15,000 tokens | ⚡ **0 tokens** (local AST + config detector) |
-| Finding missing test modules | 💸 10,000–25,000 tokens | ⚡ **0 tokens** (deterministic gap analyzer) |
-| Test execution & parsing | 💸 12,000–30,000 tokens | ⚡ **0 tokens** (subprocess runner + parsers) |
-| Traceback & error isolation | 💸 5,000–18,000 tokens | ⚡ **0 tokens** (rule-based diagnostics) |
-| **Agent consumption** | ❌ **35,000–88,000+ tokens** | ✅ **~400–900 tokens** (dense handoff prompt) |
-| Speed & accuracy | ⚠️ Slow, hallucination-prone | 🚀 Instant, 100% deterministic |
+| Project & stack discovery | Agent explores the repo | Local detector summarizes test setup |
+| Finding missing test modules | Agent searches source and tests | Local analyzer reports likely gaps |
+| Test execution & parsing | Agent reads raw test output | Local runner summarizes results |
+| Traceback & error isolation | Agent interprets full tracebacks | Rule-based diagnostics suggest likely causes |
+| **Agent handoff** | Raw logs enter the context | A compact prompt enters the context |
 
-> **Net effect: ~98% fewer tokens** per test-fixing session, and the agent starts from a verified diagnosis instead of guesses.
+Token savings depend on the repository, test output and agent workflow. We have not published a reproducible benchmark yet.
 
 ---
 
@@ -115,18 +124,13 @@ timmytest run --only-failures --timeout 120
 ## 📦 Installation
 
 ```bash
-# uv (fastest)
-uv tool install timmytest
-
-# pipx
-pipx install timmytest
-
-# pip
-pip install timmytest
-
-# zero-install
-uvx timmytest check
+# Current installation from the public GitHub source
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .
 ```
+
+PyPI publication is pending. Do not use `pip install timmytest` or `uvx timmytest` until the
+[PyPI project page](https://pypi.org/project/timmytest/) is live.
 
 ---
 
@@ -251,7 +255,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install timmytest
+      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
       - run: timmytest check . --no-banner --save-report audit-report.md
       - uses: actions/upload-artifact@v4
         with: { name: timmytest-report, path: audit-report.md }

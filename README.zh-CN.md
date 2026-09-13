@@ -8,16 +8,25 @@
 
 [English](README.md) · [Türkçe](README.tr.md) · **中文**
 
-[![PyPI](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftugrakaymakcioglu%2FTimmyTest%2Fmain%2Fpyproject.toml&query=project.version&logo=pypi&logoColor=white&label=PyPI&color=blue)](https://github.com/tugrakaymakcioglu/TimmyTest)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/tugrakaymakcioglu/TimmyTest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tugrakaymakcioglu/TimmyTest/actions/workflows/ci.yml)
 [![测试](https://img.shields.io/badge/测试-213%20通过-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![许可证](https://img.shields.io/badge/许可证-Apache--2.0-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-协议就绪-purple?logo=json&logoColor=white)](#-model-context-protocol-mcp-服务器)
 
-**告别每次会话在测试探索上烧掉 1.5万–8万 个 token。**
-TimmyTest 以 **0 个 AI token** 在本地运行您的测试，用确定性 AST 分析将每个源模块映射到其测试，
-用基于规则的修复隔离故障根因，并在 2 秒内向您的 AI 编码代理交付一份高密度、可复制粘贴的诊断提示词。
+**在开始调试前，先给编码代理一份清晰的测试报告。**
+TimmyTest 在本地运行现有测试，找出可能缺少的测试，并将失败结果汇总成可交给 Claude Code、
+Codex 或 Cursor 的简短提示词。本地命令不调用 AI API；将提示词发给代理时仍会消耗代理的 token。
+
+```bash
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .
+```
+
+目前请从 GitHub 源码安装；PyPI 尚未发布此软件包。
+
+如果首次运行失败或报告难以理解，请在[问题页面](https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose)
+提供命令、操作系统和删除敏感信息后的输出示例。
 
 [🚀 快速开始](#-快速开始) · [🎬 演示](#-实时演示) · [🔌 MCP 服务器](#-model-context-protocol-mcp-服务器) · [📦 安装](#-安装) · [💰 Token 节省](#-为什么选择-timmytesttoken-消耗问题)
 
@@ -50,22 +59,21 @@ TimmyTest 以 **0 个 AI token** 在本地运行您的测试，用确定性 AST 
 
 当 AI 编码代理（Claude Code、OpenAI Codex、Antigravity、Cursor、Copilot、Gemini CLI）被要求测试或修复代码时，它们通常：
 
-1. 烧掉 **15,000–35,000 个 token** 来列出目录并探测测试配置。
+1. 用上下文列出目录并查找测试配置。
 2. 猜测测试运行器命令，遇到环境错误，重新读取整个测试日志。
 3. 把上下文窗口浪费在原始输出上，而不是修复真正的 bug。
 
-### 💰 Token 成本与效率对比
+### 本地完成的工作
 
 | 阶段 | 仅用 AI 代理 | 使用 TimmyTest 预检 |
 | :--- | :--- | :--- |
-| 项目与技术栈发现 | 💸 8,000–15,000 token | ⚡ **0 token**（本地 AST + 配置检测器） |
-| 查找缺失测试模块 | 💸 10,000–25,000 token | ⚡ **0 token**（确定性缺口分析器） |
-| 测试执行与解析 | 💸 12,000–30,000 token | ⚡ **0 token**（子进程运行器 + 解析器） |
-| 堆栈跟踪与错误隔离 | 💸 5,000–18,000 token | ⚡ **0 token**（基于规则的诊断） |
-| **代理消耗** | ❌ **35,000–88,000+ token** | ✅ **约 400–900 token**（高密度交接提示词） |
-| 速度与准确性 | ⚠️ 缓慢、易产生幻觉 | 🚀 即时、100% 确定 |
+| 项目与技术栈发现 | 代理探索仓库 | 本地检测器汇总测试配置 |
+| 查找缺失测试模块 | 代理搜索源码和测试 | 本地分析器报告可能的缺口 |
+| 测试执行与解析 | 代理读取原始输出 | 本地运行器汇总结果 |
+| 堆栈跟踪与错误隔离 | 代理解读完整堆栈 | 基于规则的诊断给出可能的原因 |
+| **交给代理** | 原始日志进入上下文 | 简短提示词进入上下文 |
 
-> **净效果：** 每次测试修复会话 **减少约 98% 的 token**，代理从经过验证的诊断开始，而不是猜测。
+实际节省量取决于仓库、测试输出和代理工作流程。我们尚未发布可重复的基准测试。
 
 ---
 
@@ -112,18 +120,13 @@ timmytest run --only-failures --timeout 120
 ## 📦 安装
 
 ```bash
-# uv（最快）
-uv tool install timmytest
-
-# pipx
-pipx install timmytest
-
-# pip
-pip install timmytest
-
-# 免安装
-uvx timmytest check
+# 当前安装方式：公开的 GitHub 源码
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .
 ```
+
+PyPI 发布仍待完成。在 [PyPI 项目页面](https://pypi.org/project/timmytest/)上线前，
+请勿使用 `pip install timmytest` 或 `uvx timmytest`。
 
 ---
 
@@ -192,7 +195,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install timmytest
+      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
       - run: timmytest check . --no-banner --save-report audit-report.md
       - uses: actions/upload-artifact@v4
         with: { name: timmytest-report, path: audit-report.md }

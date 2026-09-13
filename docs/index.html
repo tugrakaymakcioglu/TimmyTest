@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="TimmyTest">
 <meta property="og:title" content="TimmyTest — Zero-Token Test Runner & AI Agent Prompt Generator">
-<meta property="og:description" content="Save 35k–80k tokens per session. Local test runner, deterministic AST gap analyzer and dense AI handoff prompts — 0 tokens, 35+ ecosystems, MCP server included.">
+<meta property="og:description" content="Run your tests locally, spot likely test gaps and give your coding agent a compact failure report. Install directly from GitHub.">
 <meta property="og:url" content="https://tugrakaymakcioglu.github.io/TimmyTest/">
 <meta property="og:image" content="https://raw.githubusercontent.com/tugrakaymakcioglu/TimmyTest/main/.github/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -68,7 +68,7 @@
   "author": { "@type": "Person", "name": "Tugra Kaymakcioglu", "url": "https://github.com/tugrakaymakcioglu" },
   "license": "https://opensource.org/licenses/Apache-2.0",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "downloadUrl": "https://pypi.org/project/timmytest/",
+  "downloadUrl": "https://github.com/tugrakaymakcioglu/TimmyTest",
   "keywords": "test runner, test gap analyzer, AST, AI coding agent, Claude Code, Codex, Cursor, MCP, pytest, vitest, cargo test, go test"
 }
 </script>
@@ -78,7 +78,7 @@
 
   <h1>⚡ Timmy<span class="accent">Test</span></h1>
   <p class="tagline">Zero-Token Test Runner • AST Test Gap Analyzer • AI Agent Prompt Generator</p>
-  <p class="tagline green">Runs your tests locally with 0 AI tokens — hands your agent a verified diagnosis instead of guesses.</p>
+  <p class="tagline green">Run tests locally. Find likely missing tests. Hand your coding agent a concise report.</p>
   <p class="langs">
     🌐 <a href="https://github.com/tugrakaymakcioglu/TimmyTest#-timmytest">English</a>
     <a href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.tr.md">Türkçe</a>
@@ -89,14 +89,14 @@
     <img src="https://raw.githubusercontent.com/tugrakaymakcioglu/TimmyTest/main/docs/assets/timmytest-demo.gif" alt="TimmyTest terminal demo: project overview, test results, failure diagnosis, test gaps and AI agent handoff prompt" loading="lazy">
   </div>
 
-  <a class="btn" href="https://github.com/tugrakaymakcioglu/TimmyTest">★ Star on GitHub</a>
-  <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest#-installation">Install</a>
+  <a class="btn" href="#quick-start">Try TimmyTest</a>
+  <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest">View source on GitHub</a>
   <a class="btn gh" href="https://github.com/tugrakaymakcioglu/TimmyTest/blob/main/README.md#-quick-start">Quick Start</a>
 
   <h2>Why TimmyTest?</h2>
-  <p>AI coding agents burn <b>15,000–88,000 tokens</b> exploring a codebase before they fix a single test.
-  TimmyTest does that exploration <b>locally, deterministically, with zero tokens</b>, then compresses the
-  findings into a ~400–900 token handoff prompt your agent can act on immediately.</p>
+  <p>TimmyTest detects the test setup, runs your existing suite and turns failures and likely test gaps into
+  a short report for your AI coding agent. Its local commands make no AI API calls; sending the resulting
+  prompt to an agent still uses that agent's context and tokens.</p>
 
   <div class="grid">
     <div class="card"><b>⚡ 0 AI tokens</b><span>Test execution, gap analysis and diagnostics run 100% locally.</span></div>
@@ -107,20 +107,15 @@
     <div class="card"><b>🛡️ CI exit codes</b><span>Assertion failures AND unloadable suites break the pipeline.</span></div>
   </div>
 
-  <h2>Quick start</h2>
-  <pre><code>pip install timmytest
-
-timmytest integrate   # agent rules + MCP config in one command
-timmytest check .     # full audit → prompt auto-copied to clipboard</code></pre>
-
-  <h2>Token savings per test-fixing session</h2>
-  <table>
-    <tr><th>Phase</th><th>AI agent alone</th><th>With TimmyTest</th></tr>
-    <tr><td>Stack discovery</td><td>💸 8k–15k tokens</td><td><span class="stat">⚡ 0 tokens</span></td></tr>
-    <tr><td>Missing test detection</td><td>💸 10k–25k tokens</td><td><span class="stat">⚡ 0 tokens</span></td></tr>
-    <tr><td>Test execution &amp; parsing</td><td>💸 12k–30k tokens</td><td><span class="stat">⚡ 0 tokens</span></td></tr>
-    <tr><td>Agent consumption</td><td>❌ 35k–88k+ tokens</td><td><span class="stat">✅ ~400–900 tokens</span></td></tr>
-  </table>
+  <h2 id="quick-start">Quick start</h2>
+  <p>From a terminal in a project that already has tests:</p>
+  <pre><code>python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .</code></pre>
+  <p>The package is currently installed from its public GitHub source. PyPI publication is pending.
+  See the <a href="https://github.com/tugrakaymakcioglu/TimmyTest#-live-demo">demo and example output</a>
+  before trying it on your own project.</p>
+  <p>If installation fails or the report is unclear, <a href="https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose">tell us what happened</a>
+  with your OS, command and a redacted output sample.</p>
 
   <footer>
     Apache-2.0 · Built by <a href="https://github.com/tugrakaymakcioglu">Tugra Kaymakcioglu</a> ·

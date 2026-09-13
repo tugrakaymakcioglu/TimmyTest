@@ -8,17 +8,26 @@
 
 [English](README.md) · **Türkçe** · [中文](README.zh-CN.md)
 
-[![PyPI](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftugrakaymakcioglu%2FTimmyTest%2Fmain%2Fpyproject.toml&query=project.version&logo=pypi&logoColor=white&label=PyPI&color=blue)](https://github.com/tugrakaymakcioglu/TimmyTest)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![CI](https://github.com/tugrakaymakcioglu/TimmyTest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tugrakaymakcioglu/TimmyTest/actions/workflows/ci.yml)
 [![Testler](https://img.shields.io/badge/testler-213%20ba%C5%9Far%C4%B1l%C4%B1-brightgreen?logo=pytest&logoColor=white)](tests/)
 [![Lisans](https://img.shields.io/badge/lisans-Apache--2.0-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-protokol%20haz%C4%B1r-purple?logo=json&logoColor=white)](#-model-context-protocol-mcp-sunucusu)
 
-**Test keşfi için oturum başına 15–80 bin token yakmayı bırakın.**
-TimmyTest testlerinizi **0 AI token'ı ile** yerelde çalıştırır, her kaynak modülü testleriyle
-deterministik AST analiziyle eşler, hata kök nedenlerini kural tabanlı çözümlerle izole eder ve
-AI kodlama ajanınıza 2 saniyeden kısa sürede yoğun, kopyala-yapıştır teşhis prompt'u verir.
+**Kodlama ajanınıza hata ayıklamaya başlamadan önce anlaşılır bir test raporu verin.**
+TimmyTest mevcut testleri yerelde çalıştırır, olası test eksiklerini bulur ve hataları Claude Code,
+Codex veya Cursor'a verebileceğiniz kısa bir prompt'ta özetler. Yerel komutlar AI API'si çağırmaz;
+prompt'u ajana gönderdiğinizde ise ajanın token'ları kullanılır.
+
+```bash
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .
+```
+
+Paket şu an GitHub kaynağından kuruluyor; PyPI yayını henüz yok.
+
+İlk çalıştırma başarısız olursa veya rapor anlaşılmazsa komutu, işletim sistemini ve hassas bilgileri
+çıkardığınız bir çıktı örneğini [issue olarak paylaşın](https://github.com/tugrakaymakcioglu/TimmyTest/issues/new/choose).
 
 [🚀 Hızlı Başlangıç](#-hızlı-başlangıç) · [🎬 Demo](#-canlı-demo) · [🔌 MCP Sunucusu](#-model-context-protocol-mcp-sunucusu) · [📦 Kurulum](#-kurulum) · [💰 Token Tasarrufu](#-neden-timmytest-token-tükenme-problemi)
 
@@ -51,22 +60,21 @@ Gerçek terminal çıktısı — 1 başarısız test ve 1 testsiz modül içeren
 
 AI kodlama ajanları (Claude Code, OpenAI Codex, Antigravity, Cursor, Copilot, Gemini CLI) test yazmak veya hata düzeltmek için görevlendirildiğinde tipik olarak:
 
-1. Dizin listeleme ve test yapılandırması aramak için **15.000–35.000 token** harcar.
+1. Dizinleri listelemek ve test yapılandırmasını aramak için bağlam harcar.
 2. Test koşucu komutlarını tahmin eder, ortam hataları alır ve tüm test günlüklerini yeniden okur.
 3. Bağlam penceresini gerçek hatayı düzeltmek yerine ham çıktıyla doldurur.
 
-### 💰 Token Maliyeti ve Verimlilik Karşılaştırması
+### Yerelde yapılan işler
 
 | Aşama | Tek Başına AI Ajanı | TimmyTest Ön Kontrolüyle |
 | :--- | :--- | :--- |
-| Proje ve yığın keşfi | 💸 8.000–15.000 token | ⚡ **0 token** (yerel AST + config dedektörü) |
-| Eksik test modüllerini bulma | 💸 10.000–25.000 token | ⚡ **0 token** (deterministik açık analizi) |
-| Test yürütme ve ayrıştırma | 💸 12.000–30.000 token | ⚡ **0 token** (alt süreç koşucu + ayrıştırıcılar) |
-| Traceback ve hata izolasyonu | 💸 5.000–18.000 token | ⚡ **0 token** (kural tabanlı teşhis) |
-| **Ajan tüketimi** | ❌ **35.000–88.000+ token** | ✅ **~400–900 token** (yoğun elçi prompt'u) |
-| Hız ve doğruluk | ⚠️ Yavaş, halüsinasyona açık | 🚀 Anında, %100 deterministik |
+| Proje ve yığın keşfi | Ajan repoyu araştırır | Yerel dedektör test düzenini özetler |
+| Eksik test modüllerini bulma | Ajan kaynakları ve testleri arar | Yerel analiz olası açıkları bildirir |
+| Test yürütme ve ayrıştırma | Ajan ham test çıktısını okur | Yerel koşucu sonuçları özetler |
+| Traceback ve hata izolasyonu | Ajan tüm traceback'leri yorumlar | Kural tabanlı teşhis olası nedenleri önerir |
+| **Ajan devri** | Ham günlükler bağlama girer | Kısa bir prompt bağlama girer |
 
-> **Net etki:** test düzeltme oturumu başına **~%98 daha az token** ve ajan tahmin yerine doğrulanmış bir teşhisle başlar.
+Token tasarrufu projeye, test çıktısına ve ajan iş akışına göre değişir. Henüz tekrarlanabilir bir kıyaslama yayımlamadık.
 
 ---
 
@@ -114,18 +122,13 @@ timmytest run --only-failures --timeout 120
 ## 📦 Kurulum
 
 ```bash
-# uv (en hızlı)
-uv tool install timmytest
-
-# pipx
-pipx install timmytest
-
-# pip
-pip install timmytest
-
-# kurulum olmadan
-uvx timmytest check
+# Şu anki kurulum: herkese açık GitHub kaynağı
+python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
+timmytest check .
 ```
+
+PyPI yayını bekleniyor. [PyPI proje sayfası](https://pypi.org/project/timmytest/) açılana kadar
+`pip install timmytest` veya `uvx timmytest` komutlarını kullanmayın.
 
 ---
 
@@ -195,7 +198,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install timmytest
+      - run: python -m pip install "git+https://github.com/tugrakaymakcioglu/TimmyTest.git"
       - run: timmytest check . --no-banner --save-report audit-report.md
       - uses: actions/upload-artifact@v4
         with: { name: timmytest-report, path: audit-report.md }
