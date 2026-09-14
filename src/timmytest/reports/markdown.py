@@ -39,6 +39,16 @@ def generate_markdown_report(audit: ProjectAudit, output_path: Path | None = Non
             ]
         )
 
+        if len(audit.test_runs) > 1:
+            lines.append("### Workspace runs")
+            for run in audit.test_runs:
+                lines.append(
+                    f"- `{run.command}` in `{run.working_directory}` ({run.ecosystem.value}): "
+                    f"exit {run.exit_code}, {run.passed} passed, "
+                    f"{run.failed} failed, {run.errors} errors"
+                )
+            lines.append("")
+
         if tr.failures:
             lines.append(f"### ❌ Test Failures ({len(tr.failures)})")
             for idx, fail in enumerate(tr.failures, start=1):

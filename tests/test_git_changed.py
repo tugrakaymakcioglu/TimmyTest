@@ -18,7 +18,7 @@ def _src(rel, **kw):
 
 
 def _test(rel, imports=None):
-    return TestModule(rel_path=rel, abs_path=rel, imported_modules=imports or [])
+    return TestModule(rel_path=rel, abs_path=rel, imported_modules=imports or [], test_functions=["test_example"])
 
 
 def test_select_affected_tests_direct_test_file():

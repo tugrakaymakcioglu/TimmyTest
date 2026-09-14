@@ -4,6 +4,7 @@ from pathlib import Path
 
 from timmytest.detector.models import Ecosystem, TestFramework, TestRunResult
 from timmytest.runner.base import BaseRunner
+from timmytest.runner.dart_test_runner import DartRunner
 from timmytest.runner.generic_runner import GenericRunner
 from timmytest.runner.go_runner import GoRunner
 from timmytest.runner.node_runner import NodeRunner
@@ -18,6 +19,7 @@ def _runner_for_ecosystem(ecosystem: Ecosystem) -> BaseRunner:
         Ecosystem.NODE: NodeRunner,
         Ecosystem.RUST: RustRunner,
         Ecosystem.GO: GoRunner,
+        Ecosystem.DART: DartRunner,
     }
     return mapping.get(ecosystem, GenericRunner)()
 
@@ -37,16 +39,16 @@ def _route_explicit(
     ``package.json`` or ``pyproject.toml``) is never silently mis-routed to the
     wrong test runner.
     """
-    if ecosystem in (Ecosystem.PYTHON, Ecosystem.NODE, Ecosystem.RUST, Ecosystem.GO):
+    if ecosystem in (Ecosystem.PYTHON, Ecosystem.NODE, Ecosystem.RUST, Ecosystem.GO, Ecosystem.DART):
         return _runner_for_ecosystem(ecosystem).run_tests(
             root, None, timeout_seconds, filter_pattern, test_paths=test_paths
         )
 
     generic = GenericRunner()
-    if ecosystem == Ecosystem.JAVA:
+    if ecosystem in (Ecosystem.JAVA, Ecosystem.KOTLIN):
         if (root / "gradlew").exists():
             default_cmd = "./gradlew test"
-        elif framework == TestFramework.GRADLE:
+        elif framework == TestFramework.GRADLE or ecosystem == Ecosystem.KOTLIN:
             default_cmd = "gradle test"
         else:
             default_cmd = "mvn test"
@@ -130,9 +132,13 @@ def run_project_tests(
     explicit = ecosystem not in (Ecosystem.UNKNOWN, Ecosystem.GENERIC)
 
     if custom_cmd:
-        return _runner_for_ecosystem(ecosystem).run_tests(
-            root, custom_cmd, timeout_seconds, filter_pattern, test_paths=test_paths
-        )
+        runner = _runner_for_ecosystem(ecosystem)
+        if isinstance(runner, GenericRunner):
+            return runner.run_tests(
+                root, custom_cmd, timeout_seconds, filter_pattern,
+                test_paths=test_paths, ecosystem=ecosystem, framework=framework,
+            )
+        return runner.run_tests(root, custom_cmd, timeout_seconds, filter_pattern, test_paths=test_paths)
 
     if explicit:
         return _route_explicit(root, ecosystem, framework, timeout_seconds, filter_pattern, test_paths)

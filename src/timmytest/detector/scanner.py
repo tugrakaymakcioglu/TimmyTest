@@ -197,7 +197,7 @@ def _is_test_file(
         or name.endswith("_test.d")
         or name.endswith("_test.v")
         # Perl (`.t` test files)
-        or name.endswith(".t")
+        or (name.endswith(".t") and not name.startswith("."))
     )
 
 
@@ -359,6 +359,19 @@ def _parse_python_test(file_path: Path) -> tuple[list[str], list[str], int]:
     imports: list[str] = []
     line_count = 0
 
+    def is_trivial_stub(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """Old scaffold files used only `assert True`; they prove nothing."""
+        body = [stmt for stmt in node.body if not (
+            isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        )]
+        return bool(body) and all(
+            isinstance(stmt, ast.Pass)
+            or (isinstance(stmt, ast.Assert) and isinstance(stmt.test, ast.Constant)
+                and stmt.test.value is True)
+            for stmt in body
+        )
+
     try:
         content = _read_source(file_path)
         line_count = len(content.splitlines())
@@ -371,13 +384,13 @@ def _parse_python_test(file_path: Path) -> tuple[list[str], list[str], int]:
                 imports.append(node.module)
 
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                if node.name.startswith("test_") or node.name == "test":
+                if (node.name.startswith("test_") or node.name == "test") and not is_trivial_stub(node):
                     test_funcs.append(node.name)
             elif isinstance(node, ast.ClassDef):
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
                         item.name.startswith("test_") or item.name == "test"
-                    ):
+                    ) and not is_trivial_stub(item):
                         test_funcs.append(f"{node.name}.{item.name}")
     except Exception:
         pass
@@ -561,6 +574,9 @@ def _parse_generic_test(file_path: Path) -> tuple[list[str], list[str], int]:
             content,
         )
         tests.extend(java_tests)
+
+        if file_path.suffix.lower() == ".dart":
+            tests.extend(re.findall(r"testWidgets\s*\(\s*['\"]([^'\"]+)['\"]", content))
     except Exception:
         pass
     return tests, imports, line_count
@@ -676,6 +692,7 @@ def scan_project_structure(
                     test_functions=test_funcs,
                     imported_modules=test_imports,
                     line_count=test_lines,
+                    is_placeholder="TIMMYTEST_PLACEHOLDER" in _read_source(item),
                 )
             )
         else:

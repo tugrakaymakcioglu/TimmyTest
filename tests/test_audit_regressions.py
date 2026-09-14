@@ -308,8 +308,7 @@ def test_empty_changed_selection_skips_execution(monkeypatch, tmp_path):
     def fake_run_tests(**kwargs):
         ran["executed"] = True
 
-    monkeypatch.setattr(analysis, "get_affected_test_paths", lambda *a, **k: [], raising=False)
-    monkeypatch.setattr("timmytest.git_changed.get_affected_test_paths", lambda *a, **k: [])
+    monkeypatch.setattr("timmytest.git_changed.get_changed_files", lambda *a, **k: [])
     monkeypatch.setattr(
         "timmytest.runner.orchestrator.run_project_tests",
         lambda **kwargs: fake_run_tests(**kwargs),

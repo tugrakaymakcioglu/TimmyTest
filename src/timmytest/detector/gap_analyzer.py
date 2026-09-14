@@ -81,8 +81,10 @@ def _prepare_tests(test_modules: list[TestModule]) -> list[_PreparedTest]:
                 stem=stem,
                 clean_stem=clean_stem,
                 parent_names=frozenset(p.lower() for p in test_path.parts[:-1]),
-                usable=bool(test.test_functions or test.imported_modules)
-                or (named_like_test and test.line_count > 0),
+                usable=not test.is_placeholder and (
+                    bool(test.test_functions)
+                    or (test_path.suffix.lower() != ".py" and named_like_test and test.line_count > 0)
+                ),
             )
         )
     return prepared
@@ -176,6 +178,16 @@ def _suggest_test_path(source: SourceModule, ecosystem: Ecosystem, root_has_test
         return f"tests/{stem.capitalize()}Test.php"
     elif ecosystem == Ecosystem.RUBY:
         return f"spec/{stem}_spec.rb"
+    elif ecosystem == Ecosystem.DART:
+        # Dart/Flutter convention: mirror lib/x.dart as test/x_test.dart.
+        return f"test/{stem}_test.dart"
+    elif ecosystem == Ecosystem.KOTLIN:
+        return f"src/test/kotlin/{stem.capitalize()}Test.kt"
+    elif ecosystem in (Ecosystem.JAVA, Ecosystem.SWIFT):
+        suffix = "swift" if ecosystem == Ecosystem.SWIFT else "java"
+        if ecosystem == Ecosystem.SWIFT:
+            return f"Tests/{stem}Tests.swift"
+        return f"src/test/java/{stem}Test.{suffix}"
     else:
         return f"tests/test_{stem}.{source.language}"
 

@@ -152,7 +152,7 @@ def _failing_count(audit: ProjectAudit) -> int:
     Counting only ``failed`` let a suite that never loaded - every test in it
     green, exit code 1 - pass a pipeline silently.
     """
-    return audit.test_run.failed + audit.test_run.errors
+    return audit.test_run.failed + audit.test_run.errors + int(audit.test_run.exit_code != 0 and not (audit.test_run.failed or audit.test_run.errors))
 
 
 @app.command(name="check")
