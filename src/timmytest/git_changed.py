@@ -89,6 +89,15 @@ def select_affected_tests(
 
     affected: set[str] = set()
 
+    config_names = {
+        "pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "package.json",
+        "vitest.config.ts", "vitest.config.js", "jest.config.js", "jest.config.ts",
+        "Cargo.toml", "go.mod", "pubspec.yaml", "build.gradle", "build.gradle.kts",
+        "pom.xml", "Gemfile", "composer.json", ".timmytest.yml",
+    }
+    if any(Path(rel).name in config_names for rel in changed):
+        return sorted(test_by_rel)
+
     # 1. Directly changed test files.
     for rel in changed:
         if rel in test_by_rel:
@@ -97,9 +106,9 @@ def select_affected_tests(
     # 2. Changed source files -> their matching tests.
     for src in source_modules:
         if _normalise(src.rel_path) in changed:
-            match = _find_matching_test(src, test_modules)
-            if match is not None:
-                affected.add(_normalise(match.rel_path))
+            for test in test_modules:
+                if _find_matching_test(src, [test]) is not None:
+                    affected.add(_normalise(test.rel_path))
 
     return sorted(affected)
 

@@ -67,6 +67,7 @@ class TestFramework(StrEnum):
     MINITEST = "minitest"
     XCTEST = "xctest"
     DART_TEST = "dart_test"
+    FLUTTER_TEST = "flutter_test"
     EXUNIT = "exunit"
     HSPEC = "hspec"
     CTEST = "ctest"
@@ -148,6 +149,7 @@ class TestModule(BaseModel):
     test_functions: list[str] = Field(default_factory=list)
     imported_modules: list[str] = Field(default_factory=list)
     line_count: int = 0
+    is_placeholder: bool = False
 
 
 class TestGap(BaseModel):
@@ -182,6 +184,7 @@ class TestRunResult(BaseModel):
     ecosystem: Ecosystem
     framework: TestFramework
     command: str = ""
+    working_directory: str = ""
     total: int = 0
     passed: int = 0
     failed: int = 0
@@ -232,5 +235,6 @@ class ProjectAudit(BaseModel):
 
     project: ProjectInfo
     test_run: TestRunResult
+    test_runs: list[TestRunResult] = Field(default_factory=list)
     agent_prompt: str = ""
     summary_markdown: str = ""

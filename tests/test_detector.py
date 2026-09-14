@@ -87,7 +87,7 @@ def test_scan_project_structure_python(temp_project_dir: Path):
     tests_dir = temp_project_dir / "tests"
     tests_dir.mkdir()
     (tests_dir / "test_auth.py").write_text(
-        "from demo.auth import AuthService\n\ndef test_login():\n    assert True\n",
+        "from demo.auth import AuthService\n\ndef test_login():\n    assert AuthService is not None\n",
         encoding="utf-8",
     )
 

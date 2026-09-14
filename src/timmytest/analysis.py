@@ -1,5 +1,6 @@
 """Shared audit orchestration used by both the CLI and the terminal application."""
 
+from contextlib import suppress
 from pathlib import Path
 
 from timmytest.config import TimmyConfig, load_project_config
@@ -17,8 +18,30 @@ from timmytest.detector.models import (
 from timmytest.detector.scanner import scan_project_structure
 from timmytest.diagnostics.analyzer import enrich_test_failures
 from timmytest.prompt.generator import generate_agent_prompt
+from timmytest.registry.loader import detect_workspaces
 from timmytest.reports.markdown import generate_markdown_report
 from timmytest.runner.orchestrator import run_project_tests
+
+
+def _combine_test_runs(runs: list[TestRunResult]) -> TestRunResult:
+    """Keep every workspace result while providing a safe aggregate to callers."""
+    if len(runs) == 1:
+        return runs[0]
+    return TestRunResult(
+        ecosystem=runs[0].ecosystem,
+        framework=runs[0].framework,
+        command=" | ".join(run.command for run in runs),
+        total=sum(run.total for run in runs),
+        passed=sum(run.passed for run in runs),
+        failed=sum(run.failed for run in runs),
+        skipped=sum(run.skipped for run in runs),
+        errors=sum(run.errors for run in runs),
+        duration_seconds=round(sum(run.duration_seconds for run in runs), 2),
+        exit_code=next((run.exit_code for run in runs if run.exit_code != 0), 0),
+        failures=[failure for run in runs for failure in run.failures],
+        raw_output="\n\n".join(f"$ {run.command}\n{run.raw_output}" for run in runs),
+        has_executed=any(run.has_executed for run in runs),
+    )
 
 
 def _enrich_gaps_with_coverage(
@@ -32,11 +55,8 @@ def _enrich_gaps_with_coverage(
 
     for fc in find_low_coverage_files(coverage, threshold):
         norm = fc.path.replace("\\", "/")
-        stem = Path(norm).stem
         # Skip files already flagged as fully untested.
         if norm in already_flagged:
-            continue
-        if any(stem == Path(src).stem for src in already_flagged):
             continue
         enriched.append(
             TestGap(
@@ -72,6 +92,11 @@ def analyze_project(
 
     # 1. Detect ecosystem & framework
     ecosystem, framework, default_cmd, configs = detect_ecosystem(root)
+    workspace_targets = [] if custom_cmd or cfg.custom_test_cmd else detect_workspaces(root)
+    if not default_cmd and workspace_targets:
+        _, eco_id, fw_id, default_cmd = workspace_targets[0]
+        with suppress(ValueError):
+            ecosystem, framework = type(ecosystem)(eco_id), type(framework)(fw_id)
     test_cmd = custom_cmd or cfg.custom_test_cmd or default_cmd
 
     # 2. Scan source and test files
@@ -89,16 +114,21 @@ def analyze_project(
     # 3a. Incremental selection: restrict the run to tests affected by git changes.
     effective_test_paths = test_paths
     if (changed or since) and effective_test_paths is None:
-        from timmytest.git_changed import get_affected_test_paths
+        from timmytest.git_changed import get_changed_files, select_affected_tests
 
-        affected = get_affected_test_paths(root, source_modules, test_modules, ref=since)
+        changed_files = get_changed_files(root, ref=since)
+        affected = select_affected_tests(changed_files, source_modules, test_modules)
         # Empty selection is meaningful, not a signal to fall back to the whole
         # suite: `--changed` promises "run what my diff touched", so a clean
         # tree must skip execution entirely - the previous fallback re-ran
         # everything, the exact cost the flag exists to avoid.
-        if not affected:
+        if not changed_files:
             execute_tests = False
             effective_test_paths = []
+        elif not affected:
+            # A change with no reliable mapping needs the full suite, not a
+            # misleading green result from running nothing.
+            effective_test_paths = None
         else:
             effective_test_paths = affected
 
@@ -126,20 +156,36 @@ def analyze_project(
     )
 
     # 4. Execute tests if requested
+    test_runs: list[TestRunResult] = []
     if execute_tests and test_cmd:
         # `timeout_seconds` is already resolved by the caller when it can be; the
         # config value is the fallback for callers that pass 0/None.
         effective_timeout = timeout_seconds or cfg.timeout_seconds
-        test_run = run_project_tests(
-            root_dir=root,
-            ecosystem=ecosystem,
-            framework=framework,
-            custom_cmd=test_cmd,
-            timeout_seconds=effective_timeout,
-            filter_pattern=filter_pattern,
-            test_paths=effective_test_paths,
-        )
-        test_run = enrich_test_failures(test_run)
+        targets = workspace_targets
+        if not targets:
+            targets = [(root, ecosystem.value, framework.value, test_cmd)]
+        for target_root, eco_id, fw_id, command in targets:
+            try:
+                target_eco, target_fw = type(ecosystem)(eco_id), type(framework)(fw_id)
+            except ValueError:
+                target_eco, target_fw = ecosystem, framework
+            selected_paths = effective_test_paths
+            if target_root != root or len(targets) > 1:
+                # Frameworks disagree on how to pass file paths. Run full
+                # suites for multiple workspaces rather than dropping tests.
+                selected_paths = None
+            run = enrich_test_failures(run_project_tests(
+                root_dir=target_root,
+                ecosystem=target_eco,
+                framework=target_fw,
+                custom_cmd=command,
+                timeout_seconds=effective_timeout,
+                filter_pattern=filter_pattern,
+                test_paths=selected_paths,
+            ))
+            run.working_directory = str(target_root)
+            test_runs.append(run)
+        test_run = _combine_test_runs(test_runs)
     else:
         test_run = TestRunResult(
             ecosystem=ecosystem,
@@ -156,6 +202,7 @@ def analyze_project(
     audit = ProjectAudit(
         project=project_info,
         test_run=test_run,
+        test_runs=test_runs,
         agent_prompt=agent_prompt,
     )
     audit.summary_markdown = generate_markdown_report(audit)

@@ -16,7 +16,7 @@ from typing import Any
 
 import yaml
 
-from timmytest.walk import has_file_with_extension
+from timmytest.walk import has_file_with_extension, walk_dirs
 
 _REGISTRY_PATH = Path(__file__).parent / "ecosystems.yaml"
 _LEARNED_PATH = Path(__file__).parent / "learned.yaml"
@@ -234,6 +234,61 @@ def _resolve_command(fw: dict[str, Any], eco: dict[str, Any], root: Path) -> str
     return command
 
 
+def _is_flutter_project(root: Path) -> bool:
+    """Recognize Flutter from pubspec semantics, not unrelated platform folders."""
+    pubspec = root / "pubspec.yaml"
+    if not pubspec.is_file():
+        return False
+    try:
+        data = yaml.safe_load(pubspec.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    environment = data.get("environment")
+    if isinstance(data.get("flutter"), dict) or (isinstance(environment, dict) and "flutter" in environment):
+        return True
+    for key in ("dependencies", "dev_dependencies"):
+        deps = data.get(key, {})
+        if isinstance(deps, dict) and "flutter" in deps:
+            return True
+    return False
+
+
+def detect_workspaces(root: Path) -> list[tuple[Path, str, str, str]]:
+    """Find configured test ecosystems at the root and in nested packages."""
+    registry = load_registry()
+    targets: list[tuple[Path, str, str, str]] = []
+    seen_commands: set[tuple[Path, str]] = set()
+    package_markers = {
+        "pyproject.toml", "setup.py", "package.json", "deno.json", "deno.jsonc",
+        "Cargo.toml", "go.mod", "pubspec.yaml", "pom.xml", "build.gradle",
+        "build.gradle.kts", "Gemfile", "composer.json", "Package.swift",
+        "mix.exs", "CMakeLists.txt", "Makefile", "foundry.toml",
+    }
+    for dirname, _ in walk_dirs(root):
+        directory = Path(dirname)
+        if directory != root and not any((directory / name).is_file() for name in package_markers):
+            continue
+        pkg = _read_package_json(directory)
+        for eco in registry["ecosystems"]:
+            if not _match_config_files(directory, eco.get("config_files", [])):
+                continue
+            required = eco.get("requires_extensions")
+            if required and not has_file_with_extension(directory, required):
+                continue
+            fw = _pick_framework(eco, directory, pkg)
+            command = _resolve_command(fw, eco, directory) if fw else eco.get("command", "")
+            framework_id = fw.get("id", "unknown")
+            if eco["id"] == "dart" and _is_flutter_project(directory):
+                framework_id, command = "flutter_test", "flutter test"
+            command_key = (directory, command)
+            if command and command_key not in seen_commands:
+                seen_commands.add(command_key)
+                targets.append((directory, eco["id"], framework_id, command))
+    return targets
+
+
 def detect_from_registry(root: Path) -> tuple[str, str, str, list[str]]:
     """Detect ecosystem + framework + command + config files from the registry.
 
@@ -260,6 +315,12 @@ def detect_from_registry(root: Path) -> tuple[str, str, str, list[str]]:
         fw = _pick_framework(eco, root, pkg)
         command = _resolve_command(fw, eco, root) if fw else eco.get("command", "")
 
+        # Flutter upgrade: a pubspec-only ecosystem is Dart, but Flutter apps
+        # must run `flutter test` — `dart test` refuses their pubspecs.
+        if eco["id"] == "dart" and fw and fw.get("id") == "dart_test" and _is_flutter_project(root):
+            fw = {**fw, "id": "flutter_test", "command": "flutter test"}
+            command = "flutter test"
+
         return (
             eco["id"],
             fw["id"] if fw else "unknown",
@@ -270,6 +331,21 @@ def detect_from_registry(root: Path) -> tuple[str, str, str, list[str]]:
     # Fallback: no config file matched — sniff by source file extensions.
     if has_file_with_extension(root, [".py"]):
         return "python", "pytest", "pytest -ra", []
+
+    if has_file_with_extension(root, [".dart"]):
+        # Flutter projects must run `flutter test`, not `dart test`: `dart test`
+        # refuses pubspecs whose dependencies use the Flutter SDK.
+        if _is_flutter_project(root):
+            return "dart", "flutter_test", "flutter test", []
+        return "dart", "dart_test", "dart test", []
+
+    if has_file_with_extension(root, [".kt", ".kts"]):
+        # Kotlin sources without a build file are still Kotlin: the JVM runner
+        # (`gradle test` / IDE execution) is the only sensible default.
+        return "kotlin", "kotlin_test", "gradle test", []
+
+    if has_file_with_extension(root, [".java"]):
+        return "java", "gradle", "gradle test", []
 
     if has_file_with_extension(root, [".js", ".ts"]):
         return "node", "custom", "npm test", []

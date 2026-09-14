@@ -175,13 +175,15 @@ TimmyTest ships a **data-driven registry with 35+ ecosystems** (plus a self-lear
 | **Java** | junit via maven/gradle | | **Haskell** | hspec |
 | **Kotlin** | kotlintest, gradle | | **C/C++** | ctest, gtest |
 | **C#/.NET** | dotnet test | | **Lua** | busted |
-| **Dart/Flutter** | dart test | | **Perl** | prove |
+| **Dart/Flutter** | dart test, flutter test | | **Perl** | prove |
 | **Solidity** | forge, hardhat | | **…and 20+ more** | |
 
 <details>
 <summary><b>Smart behaviors baked in</b></summary>
 
-- **Incremental runs**: `--changed` executes only tests affected by uncommitted git changes; `--since main` scopes to a branch.
+- **Incremental runs**: `--changed` selects related tests for uncommitted changes; `--since main` scopes to a branch. Changes with no reliable test mapping run the full suite.
+- **Mixed repositories**: configured ecosystems in the root and nested packages run separately; the report retains each command and exit status.
+- **Readiness score**: a heuristic based on source-to-test association, not proof of behavioral coverage. Generated test stubs are skipped and do not raise it.
 - **Coverage-aware**: `--coverage` parses `coverage.json` / `cobertura.xml` / `lcov.info` and flags low-coverage files as gaps.
 - **Watch mode**: `--watch` re-runs the audit on file change (pruned traversal — no `node_modules` stat storms).
 - **CI exit codes**: suite-level errors (unloadable test files) fail CI, not just assertion failures.
