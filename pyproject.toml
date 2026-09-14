@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "timmytest"
-version = "2.0.1"
+version = "2.1.0"
 description = "Zero-token test runner & AST test-gap analyzer for AI coding agents (Claude Code, Codex, Cursor, Copilot, Antigravity). Runs tests locally with 0 AI tokens, detects missing test modules, isolates failure root causes, and generates dense handoff prompts. 35+ ecosystems, MCP server included."
 readme = "README.md"
 license = "Apache-2.0"

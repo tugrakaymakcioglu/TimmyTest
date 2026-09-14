@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-14
+
+### Fixed
+
+- Generated test stubs are skipped and excluded from readiness; comment-only and trivial `assert True` Python files no longer count as test evidence.
+- Nonzero test-command exits fail CI even when a parser found passing tests.
+- Dart/Flutter selection reads `pubspec.yaml`; Dart and Flutter output is parsed explicitly.
+- Incremental selection includes every related test and runs the full suite when a change has no reliable mapping.
+- Distinct same-named files remain visible in low-coverage reports.
+
+### Added
+
+- Root and nested configured ecosystems run separately, with each command and result retained in reports.
+- Regression coverage for false-green results, mobile detection, and mixed repositories. The local suite contains 250 passing tests.
+
 ### 🐞 Düzeltmeler (denetim: canlı uçtan uca doğrulama)
 
 - **PATH'te olmayan `pytest` komutu artık akıllı çözümleyiciye düşüyor.** Kayıt
